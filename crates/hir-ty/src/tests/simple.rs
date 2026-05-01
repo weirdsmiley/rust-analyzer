@@ -2697,7 +2697,6 @@ fn generic_default_in_struct_literal() {
 
 #[test]
 fn generic_default_depending_on_other_type_arg() {
-    // FIXME: the {unknown} is a bug
     check_infer(
         r#"
         struct Thing<T = u128, F = fn() -> T> { t: T }
@@ -2714,7 +2713,7 @@ fn generic_default_depending_on_other_type_arg() {
             83..130 '{     ...2 }; }': ()
             89..91 't1': Thing<u32, fn() -> u32>
             97..99 't2': Thing<u128, fn() -> u128>
-            105..127 'Thing:...1u32 }': Thing<u32, fn() -> {unknown}>
+            105..127 'Thing:...1u32 }': Thing<u32, fn() -> u32>
             121..125 '1u32': u32
         "#]],
     );
