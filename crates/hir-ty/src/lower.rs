@@ -194,7 +194,7 @@ pub struct TyLoweringContext<'db, 'a> {
     store: &'a ExpressionStore,
     def: ExpressionStoreOwnerId,
     generic_def: GenericDefId,
-    generics: OnceCell<Generics<'db>>,
+    generics: &'a OnceCell<Generics<'db>>,
     in_binders: DebruijnIndex,
     impl_trait_mode: ImplTraitLoweringState,
     /// Tracks types with explicit `?Sized` bounds.
@@ -213,6 +213,7 @@ impl<'db, 'a> TyLoweringContext<'db, 'a> {
         store: &'a ExpressionStore,
         def: ExpressionStoreOwnerId,
         generic_def: GenericDefId,
+        generics: &'a OnceCell<Generics<'db>>,
         lifetime_elision: LifetimeElisionKind<'db>,
     ) -> Self {
         let impl_trait_mode = ImplTraitLoweringState::new(ImplTraitLoweringMode::Disallowed);
@@ -227,7 +228,7 @@ impl<'db, 'a> TyLoweringContext<'db, 'a> {
             resolver,
             def,
             generic_def,
-            generics: Default::default(),
+            generics,
             store,
             in_binders,
             impl_trait_mode,
@@ -1126,12 +1127,14 @@ pub(crate) fn impl_trait_with_diagnostics(
 ) -> Option<TyLoweringResult<StoredEarlyBinder<StoredTraitRef>>> {
     let impl_data = ImplSignature::of(db, impl_id);
     let resolver = impl_id.resolver(db);
+    let generics = OnceCell::new();
     let mut ctx = TyLoweringContext::new(
         db,
         &resolver,
         &impl_data.store,
         ExpressionStoreOwnerId::Signature(impl_id.into()),
         impl_id.into(),
+        &generics,
         LifetimeElisionKind::AnonymousCreateParameter { report_in_path: true },
     );
     let self_ty = db.impl_self_ty(impl_id).skip_binder();
@@ -1208,12 +1211,14 @@ impl ImplTraits {
         // FIXME unify with fn_sig_for_fn instead of doing lowering twice, maybe
         let data = FunctionSignature::of(db, def);
         let resolver = def.resolver(db);
+        let generics = OnceCell::new();
         let mut ctx_ret = TyLoweringContext::new(
             db,
             &resolver,
             &data.store,
             ExpressionStoreOwnerId::Signature(def.into()),
             def.into(),
+            &generics,
             LifetimeElisionKind::Infer,
         )
         .with_impl_trait_mode(ImplTraitLoweringMode::Opaque);
@@ -1237,12 +1242,14 @@ impl ImplTraits {
     ) -> Option<Box<StoredEarlyBinder<ImplTraits>>> {
         let data = TypeAliasSignature::of(db, def);
         let resolver = def.resolver(db);
+        let generics = OnceCell::new();
         let mut ctx = TyLoweringContext::new(
             db,
             &resolver,
             &data.store,
             ExpressionStoreOwnerId::Signature(def.into()),
             def.into(),
+            &generics,
             LifetimeElisionKind::AnonymousReportError,
         )
         .with_impl_trait_mode(ImplTraitLoweringMode::Opaque);
@@ -1336,12 +1343,14 @@ pub(crate) fn type_for_const_with_diagnostics(
     let resolver = def.resolver(db);
     let data = ConstSignature::of(db, def);
     let parent = def.loc(db).container;
+    let generics = OnceCell::new();
     let mut ctx = TyLoweringContext::new(
         db,
         &resolver,
         &data.store,
         ExpressionStoreOwnerId::Signature(def.into()),
         def.into(),
+        &generics,
         LifetimeElisionKind::AnonymousReportError,
     );
     ctx.set_lifetime_elision(LifetimeElisionKind::for_const(ctx.interner, parent));
@@ -1364,12 +1373,14 @@ pub(crate) fn type_for_static_with_diagnostics(
 ) -> TyLoweringResult<StoredEarlyBinder<StoredTy>> {
     let resolver = def.resolver(db);
     let data = StaticSignature::of(db, def);
+    let generics = OnceCell::new();
     let mut ctx = TyLoweringContext::new(
         db,
         &resolver,
         &data.store,
         ExpressionStoreOwnerId::Signature(def.into()),
         def.into(),
+        &generics,
         LifetimeElisionKind::AnonymousReportError,
     );
     ctx.set_lifetime_elision(LifetimeElisionKind::Elided(Region::new_static(ctx.interner)));
@@ -1437,19 +1448,21 @@ pub(crate) fn type_for_type_alias_with_diagnostics(
     t: TypeAliasId,
 ) -> TyLoweringResult<StoredEarlyBinder<StoredTy>> {
     let type_alias_data = TypeAliasSignature::of(db, t);
-    let resolver = t.resolver(db);
     let interner = DbInterner::new_no_crate(db);
     if type_alias_data.flags.contains(TypeAliasFlags::IS_EXTERN) {
         TyLoweringResult::empty(StoredEarlyBinder::bind(
             Ty::new_foreign(interner, t.into()).store(),
         ))
     } else {
+        let resolver = t.resolver(db);
+        let generics = OnceCell::new();
         let mut ctx = TyLoweringContext::new(
             db,
             &resolver,
             &type_alias_data.store,
             ExpressionStoreOwnerId::Signature(t.into()),
             t.into(),
+            &generics,
             LifetimeElisionKind::AnonymousReportError,
         )
         .with_impl_trait_mode(ImplTraitLoweringMode::Opaque);
@@ -1487,7 +1500,7 @@ pub(crate) fn impl_self_ty_with_diagnostics(
     impl_id: ImplId,
 ) -> TyLoweringResult<StoredEarlyBinder<StoredTy>> {
     let resolver = impl_id.resolver(db);
-
+    let generics = OnceCell::new();
     let impl_data = ImplSignature::of(db, impl_id);
     let mut ctx = TyLoweringContext::new(
         db,
@@ -1495,6 +1508,7 @@ pub(crate) fn impl_self_ty_with_diagnostics(
         &impl_data.store,
         ExpressionStoreOwnerId::Signature(impl_id.into()),
         impl_id.into(),
+        &generics,
         LifetimeElisionKind::AnonymousCreateParameter { report_in_path: true },
     );
     let ty = ctx.lower_ty(impl_data.self_ty);
@@ -1535,12 +1549,14 @@ pub(crate) fn const_param_types_with_diagnostics(
     let mut result = ArenaMap::new();
     let (data, store) = GenericParams::with_store(db, def);
     let resolver = def.resolver(db);
+    let generics = OnceCell::new();
     let mut ctx = TyLoweringContext::new(
         db,
         &resolver,
         store,
         ExpressionStoreOwnerId::Signature(def),
         def,
+        &generics,
         LifetimeElisionKind::AnonymousReportError,
     );
     ctx.forbid_params_after(0, ForbidParamsAfterReason::ConstParamTy);
@@ -1585,6 +1601,7 @@ pub(crate) fn field_types_with_diagnostics(
         VariantId::UnionId(it) => (it.resolver(db), it.into()),
         VariantId::EnumVariantId(it) => (it.resolver(db), it.lookup(db).parent.into()),
     };
+    let generics = OnceCell::new();
     let mut res = ArenaMap::default();
     let mut ctx = TyLoweringContext::new(
         db,
@@ -1592,6 +1609,7 @@ pub(crate) fn field_types_with_diagnostics(
         &var_data.store,
         ExpressionStoreOwnerId::VariantFields(variant_id),
         generic_def,
+        &generics,
         LifetimeElisionKind::AnonymousReportError,
     );
     for (field_id, field_data) in var_data.fields().iter() {
@@ -1714,16 +1732,20 @@ fn resolve_type_param_assoc_type_shorthand(
     assoc_name: Name,
 ) -> AssocTypeShorthandResolution {
     let generics = generics(db, def);
+    let store = generics.store();
+    let generics = &OnceCell::from(generics);
     let resolver = def.resolver(db);
     let mut ctx = TyLoweringContext::new(
         db,
         &resolver,
-        generics.store(),
+        store,
         ExpressionStoreOwnerId::Signature(def),
         def,
+        generics,
         LifetimeElisionKind::AnonymousReportError,
     );
     let interner = ctx.interner;
+    let generics = generics.get().unwrap();
     let param_ty = Ty::new_param(interner, param, generics.type_or_const_param_idx(param.into()));
 
     let mut this_trait_resolution = None;
@@ -1891,13 +1913,15 @@ pub(crate) fn type_alias_bounds_with_diagnostics(
     type_alias: TypeAliasId,
 ) -> TyLoweringResult<TypeAliasBounds<StoredEarlyBinder<StoredClauses>>> {
     let type_alias_data = TypeAliasSignature::of(db, type_alias);
-    let resolver = hir_def::resolver::HasResolver::resolver(type_alias, db);
+    let resolver = type_alias.resolver(db);
+    let generics = OnceCell::new();
     let mut ctx = TyLoweringContext::new(
         db,
         &resolver,
         &type_alias_data.store,
         ExpressionStoreOwnerId::Signature(type_alias.into()),
         type_alias.into(),
+        &generics,
         LifetimeElisionKind::AnonymousReportError,
     );
     let interner = ctx.interner;
@@ -2130,16 +2154,20 @@ fn generic_predicates(
     def: GenericDefId,
 ) -> TyLoweringResult<GenericPredicates> {
     let generics = generics(db, def);
+    let store = generics.store();
+    let generics = &OnceCell::from(generics);
     let resolver = def.resolver(db);
     let interner = DbInterner::new_no_crate(db);
     let mut ctx = TyLoweringContext::new(
         db,
         &resolver,
-        generics.store(),
+        store,
         ExpressionStoreOwnerId::Signature(def),
         def,
+        generics,
         LifetimeElisionKind::AnonymousReportError,
     );
+    let generics = generics.get().unwrap();
     let sized_trait = ctx.lang_items.Sized;
 
     // We need to lower parents and self separately - see the comment below lowering of implicit
@@ -2339,24 +2367,27 @@ pub(crate) fn generic_defaults_with_diagnostics(
     db: &dyn HirDatabase,
     def: GenericDefId,
 ) -> TyLoweringResult<GenericDefaults> {
-    let generic_params = generics(db, def);
-    if generic_params.has_no_params() {
+    let generics = generics(db, def);
+    if generics.has_no_params() {
         return TyLoweringResult::empty(GenericDefaults(ThinVec::new()));
     }
     let resolver = def.resolver(db);
 
-    let store_for_self = generic_params.store();
+    let store_for_self = generics.store();
+    let generics = &OnceCell::from(generics);
     let mut ctx = TyLoweringContext::new(
         db,
         &resolver,
         store_for_self,
         ExpressionStoreOwnerId::Signature(def),
         def,
+        generics,
         LifetimeElisionKind::AnonymousReportError,
     )
     .with_impl_trait_mode(ImplTraitLoweringMode::Disallowed);
+    let generics = generics.get().unwrap();
     let mut defaults = ThinVec::new();
-    if let Some(parent) = generic_params.parent() {
+    if let Some(parent) = generics.parent() {
         ctx.store = parent.store();
         defaults.extend(
             parent.iter_with_idx().map(|(idx, _id, p)| handle_generic_param(&mut ctx, idx, p)),
@@ -2366,9 +2397,7 @@ pub(crate) fn generic_defaults_with_diagnostics(
     ctx.defined_anon_consts.clear();
     ctx.store = store_for_self;
     defaults.extend(
-        generic_params
-            .iter_self_with_idx()
-            .map(|(idx, _id, p)| handle_generic_param(&mut ctx, idx, p)),
+        generics.iter_self_with_idx().map(|(idx, _id, p)| handle_generic_param(&mut ctx, idx, p)),
     );
     defaults.shrink_to_fit();
     return TyLoweringResult::from_ctx(GenericDefaults(defaults), ctx);
@@ -2434,12 +2463,14 @@ fn fn_sig_for_fn(
     let data = FunctionSignature::of(db, def);
     let resolver = def.resolver(db);
     let interner = DbInterner::new_no_crate(db);
+    let generics = OnceCell::new();
     let mut ctx_params = TyLoweringContext::new(
         db,
         &resolver,
         &data.store,
         ExpressionStoreOwnerId::Signature(def.into()),
         def.into(),
+        &generics,
         LifetimeElisionKind::for_fn_params(data),
     );
     let params = data.params.iter().map(|&tr| ctx_params.lower_ty(tr));
@@ -2450,6 +2481,7 @@ fn fn_sig_for_fn(
         &data.store,
         ExpressionStoreOwnerId::Signature(def.into()),
         def.into(),
+        &generics,
         LifetimeElisionKind::for_fn_ret(interner),
     )
     .with_impl_trait_mode(ImplTraitLoweringMode::Opaque);
@@ -2521,14 +2553,16 @@ pub(crate) fn associated_ty_item_bounds<'db>(
     type_alias: TypeAliasId,
 ) -> EarlyBinder<'db, BoundExistentialPredicates<'db>> {
     let type_alias_data = TypeAliasSignature::of(db, type_alias);
-    let resolver = hir_def::resolver::HasResolver::resolver(type_alias, db);
+    let resolver = type_alias.resolver(db);
     let interner = DbInterner::new_no_crate(db);
+    let generics = OnceCell::new();
     let mut ctx = TyLoweringContext::new(
         db,
         &resolver,
         &type_alias_data.store,
         ExpressionStoreOwnerId::Signature(type_alias.into()),
         type_alias.into(),
+        &generics,
         LifetimeElisionKind::AnonymousReportError,
     );
     // FIXME: we should never create non-existential predicates in the first place
