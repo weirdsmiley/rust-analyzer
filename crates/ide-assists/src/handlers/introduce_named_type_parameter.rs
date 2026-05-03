@@ -183,6 +183,15 @@ fn foo<
     }
 
     #[test]
+    fn replace_impl_question_bounds() {
+        check_assist(
+            introduce_named_type_parameter,
+            r#"fn foo(bar: &$0impl ?Sized) {}"#,
+            r#"fn foo<$0S: ?Sized>(bar: &S) {}"#,
+        );
+    }
+
+    #[test]
     fn replace_impl_with_mut() {
         check_assist(
             introduce_named_type_parameter,
