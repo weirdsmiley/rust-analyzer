@@ -2,7 +2,11 @@
 //! immutable, all function here return a fresh copy of the tree, instead of
 //! doing an in-place modification.
 use parser::T;
-use std::{fmt, iter, ops};
+use std::{
+    fmt,
+    iter::{self, once},
+    ops,
+};
 
 use crate::{
     AstToken, NodeOrToken, SyntaxElement,
@@ -249,6 +253,28 @@ impl ast::IdentPat {
             }
         }
         self.clone()
+    }
+}
+
+impl ast::UseTree {
+    pub fn wrap_in_tree_list_with_editor(&self) -> Option<ast::UseTree> {
+        if self.use_tree_list().is_some()
+            && self.path().is_none()
+            && self.star_token().is_none()
+            && self.rename().is_none()
+        {
+            return None;
+        }
+
+        let (editor, use_tree) = SyntaxEditor::with_ast_node(self);
+        let make = editor.make();
+        let first_child = use_tree.syntax().first_child_or_token()?;
+        let last_child = use_tree.syntax().last_child_or_token()?;
+        let use_tree_list = make.use_tree_list(once(self.clone()));
+        editor.replace_all(first_child..=last_child, vec![use_tree_list.syntax().clone().into()]);
+
+        let edit = editor.finish();
+        ast::UseTree::cast(edit.new_root().clone())
     }
 }
 
