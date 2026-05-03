@@ -2,15 +2,15 @@
 
 use std::iter::{empty, once, successors};
 
-use parser::{SyntaxKind, T};
+use parser::T;
 
 use crate::{
-    AstNode, AstToken, Direction, SyntaxElement,
+    AstNode, AstToken, Direction,
     SyntaxKind::{ATTR, COMMENT, WHITESPACE},
-    SyntaxNode, SyntaxToken,
+    SyntaxNode,
     algo::{self, neighbor},
     ast::{self, edit::IndentLevel, make, syntax_factory::SyntaxFactory},
-    syntax_editor::{self, SyntaxEditor},
+    syntax_editor::SyntaxEditor,
     ted,
 };
 
@@ -267,75 +267,6 @@ impl ast::Impl {
             ted::append_child(self.syntax(), assoc_item_list.syntax());
         }
         self.assoc_item_list().unwrap()
-    }
-}
-
-impl ast::AssocItemList {
-    /// Adds a new associated item after all of the existing associated items.
-    ///
-    /// Attention! This function does align the first line of `item` with respect to `self`,
-    /// but it does _not_ change indentation of other lines (if any).
-    pub fn add_item(&self, editor: &SyntaxEditor, item: ast::AssocItem) {
-        let make = editor.make();
-        let (indent, position, whitespace) = match self.assoc_items().last() {
-            Some(last_item) => (
-                IndentLevel::from_node(last_item.syntax()),
-                syntax_editor::Position::after(last_item.syntax()),
-                "\n\n",
-            ),
-            None => match self.l_curly_token() {
-                Some(l_curly) => {
-                    normalize_ws_between_braces_with_editor(editor, self.syntax());
-                    (
-                        IndentLevel::from_token(&l_curly) + 1,
-                        syntax_editor::Position::after(&l_curly),
-                        "\n",
-                    )
-                }
-                None => (
-                    IndentLevel::zero(),
-                    syntax_editor::Position::last_child_of(self.syntax()),
-                    "\n",
-                ),
-            },
-        };
-        let elements: Vec<SyntaxElement> = vec![
-            make.whitespace(&format!("{whitespace}{indent}")).into(),
-            item.syntax().clone().into(),
-        ];
-        editor.insert_all(position, elements);
-    }
-}
-
-impl ast::RecordExprFieldList {
-    pub fn add_field(&self, field: ast::RecordExprField) {
-        let is_multiline = self.syntax().text().contains_char('\n');
-        let whitespace = if is_multiline {
-            let indent = IndentLevel::from_node(self.syntax()) + 1;
-            make::tokens::whitespace(&format!("\n{indent}"))
-        } else {
-            make::tokens::single_space()
-        };
-
-        if is_multiline {
-            normalize_ws_between_braces(self.syntax());
-        }
-
-        let position = match self.fields().last() {
-            Some(last_field) => {
-                let comma = get_or_insert_comma_after(last_field.syntax());
-                ted::Position::after(comma)
-            }
-            None => match self.l_curly_token() {
-                Some(it) => ted::Position::after(it),
-                None => ted::Position::last_child_of(self.syntax()),
-            },
-        };
-
-        ted::insert_all(position, vec![whitespace.into(), field.syntax().clone().into()]);
-        if is_multiline {
-            ted::insert(ted::Position::after(field.syntax()), ast::make::token(T![,]));
-        }
     }
 }
 
