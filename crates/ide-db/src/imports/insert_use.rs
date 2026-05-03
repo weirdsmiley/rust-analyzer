@@ -248,9 +248,12 @@ fn insert_use_with_alias_option_with_editor(
         };
     }
 
-    let use_tree = make.use_tree(path, None, alias, false);
-    if mb == Some(MergeBehavior::One) && use_tree.path().is_some() {
-        use_tree.wrap_in_tree_list();
+    let mut use_tree = make.use_tree(path, None, alias, false);
+    if mb == Some(MergeBehavior::One)
+        && use_tree.path().is_some()
+        && let Some(wrapped) = use_tree.wrap_in_tree_list_with_editor()
+    {
+        use_tree = wrapped;
     }
     let use_item = make.use_(scope.required_cfgs.iter().cloned().rev(), None, use_tree);
 
