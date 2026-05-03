@@ -653,6 +653,7 @@ async fn main(&self, param1: i32, ref mut param2: i32, _: i32, param4 @ _: i32, 
 "#,
         expect![[r#"
             fn main(self, param1, mut param2, mut <ra@gennew>0, mut param4, mut <ra@gennew>1) async {
+                let self = self;
                 let mut param1 = param1;
                 let mut param2 = param2;
                 let ref mut param2 = param2;
