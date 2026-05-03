@@ -1153,8 +1153,8 @@ pub(crate) fn impl_trait_with_diagnostics<'db>(
     });
 
     #[salsa::tracked(returns(ref))]
-    pub(crate) fn impl_trait_with_diagnostics_query<'db>(
-        db: &'db dyn HirDatabase,
+    pub(crate) fn impl_trait_with_diagnostics_query(
+        db: &dyn HirDatabase,
         impl_id: ImplId,
     ) -> Option<(StoredEarlyBinder<(TraitId, StoredGenericArgs)>, Diagnostics)> {
         let impl_data = ImplSignature::of(db, impl_id);
@@ -1441,8 +1441,8 @@ pub(crate) fn value_ty<'db>(
     return value_ty_query(db, def).as_ref().map(|it| it.get());
 
     #[salsa::tracked(returns(ref))]
-    pub(crate) fn value_ty_query<'db>(
-        db: &'db dyn HirDatabase,
+    pub(crate) fn value_ty_query(
+        db: &dyn HirDatabase,
         def: ValueTyDefId,
     ) -> Option<StoredEarlyBinder<StoredTy>> {
         match def {
@@ -1464,8 +1464,8 @@ pub(crate) fn type_for_type_alias_with_diagnostics<'db>(
     return (ty.get(), diags.clone());
 
     #[salsa::tracked(returns(ref), cycle_result = type_for_type_alias_with_diagnostics_cycle_result)]
-    pub(crate) fn type_for_type_alias_with_diagnostics_query<'db>(
-        db: &'db dyn HirDatabase,
+    pub(crate) fn type_for_type_alias_with_diagnostics_query(
+        db: &dyn HirDatabase,
         t: TypeAliasId,
     ) -> (StoredEarlyBinder<StoredTy>, Diagnostics) {
         let type_alias_data = TypeAliasSignature::of(db, t);
@@ -1525,8 +1525,8 @@ pub(crate) fn impl_self_ty_with_diagnostics<'db>(
     return (ty.get(), diags.clone());
 
     #[salsa::tracked(returns(ref), cycle_result = impl_self_ty_with_diagnostics_cycle_result)]
-    pub(crate) fn impl_self_ty_with_diagnostics_query<'db>(
-        db: &'db dyn HirDatabase,
+    pub(crate) fn impl_self_ty_with_diagnostics_query(
+        db: &dyn HirDatabase,
         impl_id: ImplId,
     ) -> (StoredEarlyBinder<StoredTy>, Diagnostics) {
         let resolver = impl_id.resolver(db);
@@ -1572,8 +1572,8 @@ pub(crate) fn const_param_ty_with_diagnostics<'db>(
 
     // FIXME: Make this query non-interned.
     #[salsa::tracked(returns(ref), cycle_result = const_param_ty_with_diagnostics_cycle_result)]
-    pub(crate) fn const_param_ty_with_diagnostics_query<'db>(
-        db: &'db dyn HirDatabase,
+    pub(crate) fn const_param_ty_with_diagnostics_query(
+        db: &dyn HirDatabase,
         _: (),
         def: ConstParamId,
     ) -> (StoredTy, Diagnostics) {
@@ -1618,8 +1618,8 @@ pub(crate) fn field_types_query(
 
 /// Build the type of all specific fields of a struct or enum variant.
 #[salsa::tracked(returns(ref))]
-pub(crate) fn field_types_with_diagnostics_query<'db>(
-    db: &'db dyn HirDatabase,
+pub(crate) fn field_types_with_diagnostics_query(
+    db: &dyn HirDatabase,
     variant_id: VariantId,
 ) -> (ArenaMap<LocalFieldId, StoredEarlyBinder<StoredTy>>, Diagnostics) {
     let var_data = variant_id.fields(db);
@@ -1940,8 +1940,8 @@ fn type_alias_bounds_with_diagnostics<'db>(
     );
 
     #[salsa::tracked(returns(ref))]
-    pub fn type_alias_bounds_with_diagnostics_query<'db>(
-        db: &'db dyn HirDatabase,
+    pub fn type_alias_bounds_with_diagnostics_query(
+        db: &dyn HirDatabase,
         type_alias: TypeAliasId,
     ) -> (TypeAliasBounds<StoredEarlyBinder<StoredClauses>>, Diagnostics) {
         let type_alias_data = TypeAliasSignature::of(db, type_alias);
@@ -2157,8 +2157,8 @@ pub(crate) fn trait_environment<'db>(
     return ParamEnv { clauses: trait_environment_query(db, def).as_ref() };
 
     #[salsa::tracked(returns(ref))]
-    pub(crate) fn trait_environment_query<'db>(
-        db: &'db dyn HirDatabase,
+    pub(crate) fn trait_environment_query(
+        db: &dyn HirDatabase,
         def: GenericDefId,
     ) -> StoredClauses {
         let module = def.module(db);
@@ -2452,8 +2452,8 @@ pub(crate) fn callable_item_signature<'db>(
     return callable_item_signature_query(db, def).get_with(|sig| sig.get());
 
     #[salsa::tracked(returns(ref))]
-    pub(crate) fn callable_item_signature_query<'db>(
-        db: &'db dyn HirDatabase,
+    pub(crate) fn callable_item_signature_query(
+        db: &dyn HirDatabase,
         def: CallableDefId,
     ) -> StoredEarlyBinder<StoredPolyFnSig> {
         match def {

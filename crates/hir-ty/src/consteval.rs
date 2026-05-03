@@ -330,8 +330,8 @@ pub(crate) fn const_eval<'db>(
     };
 
     #[salsa::tracked(returns(ref), cycle_result = const_eval_cycle_result)]
-    pub(crate) fn const_eval_query<'db>(
-        db: &'db dyn HirDatabase,
+    pub(crate) fn const_eval_query(
+        db: &dyn HirDatabase,
         def: ConstId,
         subst: StoredGenericArgs,
         trait_env: Option<StoredParamEnvAndCrate>,
@@ -371,8 +371,8 @@ pub(crate) fn const_eval_static<'db>(
     };
 
     #[salsa::tracked(returns(ref), cycle_result = const_eval_static_cycle_result)]
-    pub(crate) fn const_eval_static_query<'db>(
-        db: &'db dyn HirDatabase,
+    pub(crate) fn const_eval_static_query(
+        db: &dyn HirDatabase,
         def: StaticId,
     ) -> Result<StoredAllocation, ConstEvalError> {
         let interner = DbInterner::new_no_crate(db);
