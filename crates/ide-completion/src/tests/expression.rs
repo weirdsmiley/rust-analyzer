@@ -48,8 +48,8 @@ fn baz() {
             fn create_foo(…)   fn(&FooDesc)
             fn function()              fn()
             ma makro!(…) macro_rules! makro
-            md _69latrick
-            md module
+            md _69latrick::
+            md module::
             sc STATIC                  Unit
             st FooDesc              FooDesc
             st Record                Record
@@ -149,8 +149,8 @@ impl Unit {
             me self.foo()          fn(self)
             lc self                    Unit
             ma makro!(…) macro_rules! makro
-            md module
-            md qualified
+            md module::
+            md qualified::
             sp Self                    Unit
             sc STATIC                  Unit
             st Record                Record
@@ -212,8 +212,8 @@ impl Unit {
             en Enum                    Enum
             fn function()              fn()
             ma makro!(…) macro_rules! makro
-            md module
-            md qualified
+            md module::
+            md qualified::
             sc STATIC                  Unit
             st Record                Record
             st Tuple                  Tuple
@@ -2224,7 +2224,7 @@ pub struct UnstableThisShouldNotBeListed;
 "#,
         expect![[r#"
             fn main() fn()
-            md std
+            md std::
             bt u32     u32
             kw async
             kw const
@@ -2278,7 +2278,7 @@ pub struct UnstableButWeAreOnNightlyAnyway;
 "#,
         expect![[r#"
             fn main()                                                     fn()
-            md std
+            md std::
             st UnstableButWeAreOnNightlyAnyway UnstableButWeAreOnNightlyAnyway
             bt u32                                                         u32
             kw async
@@ -2333,7 +2333,7 @@ pub mod intrinsics {}
     "#,
         expect![[r#"
             fn main() fn()
-            md std
+            md std::
             bt u32     u32
             kw async
             kw const
@@ -2383,10 +2383,10 @@ fn main() {
 pub mod intrinsics {}
     "#,
         expect![[r#"
-            fn main() fn()
-            md intrinsics
-            md std
-            bt u32     u32
+            fn main()  fn()
+            md intrinsics::
+            md std::
+            bt u32      u32
             kw async
             kw const
             kw crate::
@@ -2622,7 +2622,7 @@ fn main() {
             ma helper!(…) macro_rules! helper
             ma m!(…)           macro_rules! m
             ma makro!(…)   macro_rules! makro
-            md module
+            md module::
             sc STATIC                    Unit
             st Record                  Record
             st Tuple                    Tuple
@@ -3085,12 +3085,12 @@ fn bar() {
             ma format_args_nl!(…)       macro_rules! format_args_nl
             ma panic!(…)                         macro_rules! panic
             ma print!(…)                         macro_rules! print
-            md core
-            md result (use core::result)
-            md rust_2015 (use core::prelude::rust_2015)
-            md rust_2018 (use core::prelude::rust_2018)
-            md rust_2021 (use core::prelude::rust_2021)
-            md rust_2024 (use core::prelude::rust_2024)
+            md core::
+            md result:: (use core::result)
+            md rust_2015:: (use core::prelude::rust_2015)
+            md rust_2018:: (use core::prelude::rust_2018)
+            md rust_2021:: (use core::prelude::rust_2021)
+            md rust_2024:: (use core::prelude::rust_2024)
             tt Clone
             tt Copy
             tt FromIterator
@@ -3205,9 +3205,9 @@ fn foo() {
 }
     "#,
         expect![[r#"
-            fn foo()  fn()
-            md proc_macros
-            bt u32     u32
+            fn foo()    fn()
+            md proc_macros::
+            bt u32       u32
             kw async
             kw const
             kw crate::
@@ -3255,9 +3255,9 @@ fn foo() {
 }
     "#,
         expect![[r#"
-            fn foo()  fn()
-            md proc_macros
-            bt u32     u32
+            fn foo()    fn()
+            md proc_macros::
+            bt u32       u32
             kw async
             kw const
             kw crate::

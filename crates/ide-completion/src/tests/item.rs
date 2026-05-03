@@ -15,7 +15,7 @@ impl Tra$0
         expect![[r#"
             en Enum                    Enum
             ma makro!(…) macro_rules! makro
-            md module
+            md module::
             st Record                Record
             st Tuple                  Tuple
             st Unit                    Unit
@@ -41,7 +41,7 @@ impl Trait for Str$0
         expect![[r#"
             en Enum                    Enum
             ma makro!(…) macro_rules! makro
-            md module
+            md module::
             st Record                Record
             st Tuple                  Tuple
             st Unit                    Unit
@@ -118,7 +118,7 @@ fn completes_where() {
         expect![[r#"
             en Enum (adds ->)          Enum
             ma makro!(…) macro_rules! makro
-            md module (adds ->)
+            md module:: (adds ->)
             st Record (adds ->)      Record
             st Tuple (adds ->)        Tuple
             st Unit (adds ->)          Unit
@@ -363,7 +363,7 @@ fn bar() {
             ma expand_to_test!(…) macro_rules! expand_to_test
             ma makro!(…)                   macro_rules! makro
             ma test!(…)                            macro test
-            md module
+            md module::
             sc STATIC                                    Unit
             st Record                                  Record
             st Tuple                                    Tuple

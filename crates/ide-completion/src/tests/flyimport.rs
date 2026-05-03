@@ -1772,7 +1772,7 @@ fn function() {
 "#,
         expect![[r#"
             st FooStruct (use outer::FooStruct) BarStruct
-            md foo (use outer::foo)
+            md foo:: (use outer::foo)
             fn foo_fun() (use outer::foo_fun)        fn()
         "#]],
     );
