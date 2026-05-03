@@ -152,7 +152,7 @@ pub fn impl_trait<'db>(
 }
 
 #[salsa::tracked(returns(ref))]
-pub fn predicates<'db>(db: &'db dyn HirDatabase, impl_: BuiltinDeriveImplId) -> GenericPredicates {
+pub fn predicates(db: &dyn HirDatabase, impl_: BuiltinDeriveImplId) -> GenericPredicates {
     let loc = impl_.loc(db);
     let generic_params = GenericParams::of(db, loc.adt.into());
     let interner = DbInterner::new_with(db, loc.module(db).krate(db));
