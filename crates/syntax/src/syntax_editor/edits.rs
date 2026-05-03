@@ -191,11 +191,7 @@ impl SyntaxEditor {
 
 fn get_or_insert_comma_after(editor: &SyntaxEditor, syntax: &SyntaxNode) -> SyntaxToken {
     let make = editor.make();
-    match syntax
-        .siblings_with_tokens(Direction::Next)
-        .filter_map(|it| it.into_token())
-        .find(|it| it.kind() == T![,])
-    {
+    match comma_after(syntax) {
         Some(it) => it,
         None => {
             let comma = make.token(T![,]);
@@ -239,6 +235,113 @@ impl ast::AssocItemList {
             .collect();
         editor.insert_all(position, elements);
     }
+}
+
+impl ast::RecordExprFieldList {
+    pub fn add_fields(
+        &self,
+        editor: &SyntaxEditor,
+        fields: impl IntoIterator<Item = ast::RecordExprField>,
+    ) {
+        add_record_fields(
+            editor,
+            self.syntax(),
+            self.fields().last().map(|it| it.syntax().clone()),
+            self.l_curly_token(),
+            fields.into_iter().map(|it| it.syntax().clone().into()),
+        );
+    }
+}
+
+impl ast::RecordPatFieldList {
+    pub fn add_fields(
+        &self,
+        editor: &SyntaxEditor,
+        fields: impl IntoIterator<Item = ast::RecordPatField>,
+    ) {
+        add_record_fields(
+            editor,
+            self.syntax(),
+            self.fields().last().map(|it| it.syntax().clone()),
+            self.l_curly_token(),
+            fields.into_iter().map(|it| it.syntax().clone().into()),
+        );
+    }
+}
+
+fn add_record_fields(
+    editor: &SyntaxEditor,
+    field_list: &SyntaxNode,
+    last_field: Option<SyntaxNode>,
+    l_curly: Option<SyntaxToken>,
+    fields: impl Iterator<Item = SyntaxElement>,
+) {
+    let fields = fields.collect::<Vec<_>>();
+    if fields.is_empty() {
+        return;
+    }
+
+    let make = editor.make();
+    let is_multiline = field_list.text().contains_char('\n');
+    let whitespace = || {
+        if is_multiline {
+            let indent = IndentLevel::from_node(field_list) + 1;
+            make.whitespace(&format!("\n{indent}"))
+        } else {
+            make.whitespace(" ")
+        }
+    };
+
+    if is_multiline {
+        normalize_ws_between_braces(editor, field_list);
+    }
+
+    let mut elements = Vec::new();
+    let next_after_insert;
+    let position = match last_field {
+        Some(last_field) => match comma_after(&last_field) {
+            Some(comma) => {
+                next_after_insert = comma.next_sibling_or_token();
+                Position::after(comma)
+            }
+            None => {
+                next_after_insert = last_field.next_sibling_or_token();
+                elements.push(make.token(T![,]).into());
+                Position::after(last_field)
+            }
+        },
+        None => match l_curly {
+            Some(it) => {
+                next_after_insert = it.next_sibling_or_token();
+                Position::after(it)
+            }
+            None => {
+                next_after_insert = None;
+                Position::last_child_of(field_list)
+            }
+        },
+    };
+
+    let fields_len = fields.len();
+    for (idx, field) in fields.into_iter().enumerate() {
+        elements.push(whitespace().into());
+        elements.push(field);
+        if is_multiline || idx + 1 != fields_len {
+            elements.push(make.token(T![,]).into());
+        }
+    }
+    if !is_multiline && next_after_insert.is_some_and(|it| it.kind() != SyntaxKind::WHITESPACE) {
+        elements.push(make.whitespace(" ").into());
+    }
+
+    editor.insert_all(position, elements);
+}
+
+fn comma_after(syntax: &SyntaxNode) -> Option<SyntaxToken> {
+    syntax
+        .siblings_with_tokens(Direction::Next)
+        .filter_map(|it| it.into_token())
+        .find(|it| it.kind() == T![,])
 }
 
 impl ast::Impl {
