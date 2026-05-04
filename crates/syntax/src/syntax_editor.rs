@@ -702,6 +702,62 @@ mod tests {
     }
 
     #[test]
+    fn test_dependent_change_prefers_nearest_changed_ancestor() {
+        let root = make::block_expr(
+            [],
+            Some(
+                make::block_expr(
+                    [make::let_stmt(
+                        make::ext::simple_ident_pat(make::name("second")).into(),
+                        None,
+                        Some(make::expr_literal("2").into()),
+                    )
+                    .into()],
+                    None,
+                )
+                .into(),
+            ),
+        );
+
+        let (editor, root) = SyntaxEditor::with_ast_node(&root);
+        let make = editor.make();
+
+        let inner_block =
+            root.syntax().descendants().flat_map(ast::BlockExpr::cast).nth(1).unwrap();
+
+        let outer_replacement = make.block_expr([], Some(ast::Expr::BlockExpr(root.clone())));
+        let inner_replacement =
+            make.block_expr([], Some(ast::Expr::BlockExpr(inner_block.clone())));
+
+        let first_let = make.let_stmt(
+            make::ext::simple_ident_pat(make::name("first")).into(),
+            None,
+            Some(make::expr_literal("1").into()),
+        );
+
+        editor.insert(
+            Position::first_child_of(inner_block.stmt_list().unwrap().syntax()),
+            first_let.syntax(),
+        );
+        editor.replace(inner_block.syntax(), inner_replacement.syntax());
+        editor.replace(root.syntax(), outer_replacement.syntax());
+
+        let edit = editor.finish();
+
+        let expect = expect![[r#"
+            {
+                {
+                {
+                let first = 1;{
+                let second = 2;
+            }
+            }
+            }
+            }"#]];
+        expect.assert_eq(&edit.new_root.to_string());
+    }
+
+    #[test]
     fn test_replace_root_with_dependent() {
         let root = make::block_expr(
             [make::let_stmt(
