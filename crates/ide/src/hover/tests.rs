@@ -7152,6 +7152,7 @@ fn f() { let expr = [1, 2, $03$0, 4] }
 fn hover_range_functions() {
     check_hover_range(
         r#"
+//- minicore: unsize, coerce_unsized
 fn f<T>(a: &[T]) { }
 fn b() { $0f$0(&[1, 2, 3, 4, 5]); }
 "#,

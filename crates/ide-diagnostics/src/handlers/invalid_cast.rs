@@ -990,7 +990,7 @@ fn main() {
     fn rustc_issue_106883() {
         check_diagnostics_with_disabled(
             r#"
-//- minicore: sized, deref
+//- minicore: sized, deref, coerce_unsized, unsize
 use core::ops::Deref;
 
 struct Foo;

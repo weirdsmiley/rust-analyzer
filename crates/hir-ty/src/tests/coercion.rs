@@ -1036,3 +1036,21 @@ fn f() {
     "#,
     );
 }
+
+#[test]
+fn regression_22270() {
+    check_no_mismatches(
+        r#"
+fn a() {}
+fn b() {}
+
+fn foo<T, const N: usize>(x: [T; N]) -> Vec<T> {
+    loop {}
+}
+
+fn bar() {
+    foo([a, b]);
+}
+    "#,
+    );
+}

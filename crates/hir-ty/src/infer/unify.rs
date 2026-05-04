@@ -7,7 +7,7 @@ use hir_def::{ExpressionStoreOwnerId, GenericParamId, TraitId};
 use rustc_hash::FxHashSet;
 use rustc_type_ir::{
     TyVid, TypeFoldable, TypeVisitableExt,
-    inherent::{GenericArg as _, IntoKind, Ty as _},
+    inherent::{Const as _, GenericArg as _, IntoKind, Ty as _},
     solve::Certainty,
 };
 use smallvec::SmallVec;
@@ -17,9 +17,9 @@ use crate::{
     InferenceDiagnostic, Span,
     db::HirDatabase,
     next_solver::{
-        Canonical, ClauseKind, Const, DbInterner, ErrorGuaranteed, GenericArg, GenericArgs,
-        ParamEnv, Predicate, PredicateKind, Region, SolverDefId, Term, TraitRef, Ty, TyKind,
-        TypingMode,
+        Canonical, ClauseKind, Const, ConstKind, DbInterner, ErrorGuaranteed, GenericArg,
+        GenericArgs, ParamEnv, Predicate, PredicateKind, Region, SolverDefId, Term, TraitRef, Ty,
+        TyKind, TypingMode,
         fulfill::{FulfillmentCtxt, NextSolverError},
         infer::{
             DbInternerInferExt, InferCtxt, InferOk,
@@ -339,6 +339,30 @@ impl<'db> InferenceTable<'db> {
             }
         } else {
             self.resolve_vars_with_obligations(ty)
+        }
+    }
+
+    pub(crate) fn try_structurally_resolve_const(
+        &mut self,
+        sp: Span,
+        ct: Const<'db>,
+    ) -> Const<'db> {
+        let ct = self.resolve_vars_with_obligations(ct);
+
+        if let ConstKind::Unevaluated(..) = ct.kind() {
+            let result = self
+                .infer_ctxt
+                .at(&ObligationCause::new(sp), self.param_env)
+                .structurally_normalize_const(ct, &mut self.fulfillment_cx);
+            match result {
+                Ok(normalized_ct) => normalized_ct,
+                Err(errors) => {
+                    self.trait_errors.extend(errors);
+                    Const::new_error(self.interner(), ErrorGuaranteed)
+                }
+            }
+        } else {
+            ct
         }
     }
 
