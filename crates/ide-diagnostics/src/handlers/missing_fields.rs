@@ -170,7 +170,8 @@ fn fixes(ctx: &DiagnosticsContext<'_, '_>, d: &hir::MissingFields) -> Option<Vec
                 );
                 new_fields.push(field);
             }
-            let new_field_list = add_record_expr_fields(editor, &old_field_list, new_fields)?;
+            old_field_list.add_fields(&editor, new_fields);
+            let new_field_list = editor.finish().find_element(old_field_list.syntax())?;
             build_text_edit(&new_field_list, old_field_list.syntax())
         }
         Either::Right(field_list_parent) => {
@@ -193,38 +194,11 @@ fn fixes(ctx: &DiagnosticsContext<'_, '_>, d: &hir::MissingFields) -> Option<Vec
                 );
                 new_fields.push(field);
             }
-            let new_field_list = add_record_pat_fields(editor, &old_field_list, new_fields)?;
+            old_field_list.add_fields(&editor, new_fields);
+            let new_field_list = editor.finish().find_element(old_field_list.syntax())?;
             build_text_edit(&new_field_list, old_field_list.syntax())
         }
     }
-}
-
-fn add_record_expr_fields(
-    editor: SyntaxEditor,
-    field_list: &ast::RecordExprFieldList,
-    fields: Vec<ast::RecordExprField>,
-) -> Option<SyntaxNode> {
-    let old_range = field_list.syntax().text_range();
-    let kind = field_list.syntax().kind();
-    field_list.add_fields(&editor, fields);
-    let edit = editor.finish();
-    edit.new_root()
-        .descendants()
-        .find(|it| it.kind() == kind && it.text_range().start() == old_range.start())
-}
-
-fn add_record_pat_fields(
-    editor: SyntaxEditor,
-    field_list: &ast::RecordPatFieldList,
-    fields: Vec<ast::RecordPatField>,
-) -> Option<SyntaxNode> {
-    let old_range = field_list.syntax().text_range();
-    let kind = field_list.syntax().kind();
-    field_list.add_fields(&editor, fields);
-    let edit = editor.finish();
-    edit.new_root()
-        .descendants()
-        .find(|it| it.kind() == kind && it.text_range().start() == old_range.start())
 }
 
 fn make_ty(
