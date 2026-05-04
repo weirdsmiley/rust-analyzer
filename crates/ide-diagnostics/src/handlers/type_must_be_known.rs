@@ -137,4 +137,26 @@ fn foo() {
         "#,
         );
     }
+
+    #[test]
+    fn regression_22263() {
+        check_diagnostics(
+            r#"
+trait From<T> {}
+impl<T> From<T> for T {}
+#[rustc_reservation_impl = "blah blah"]
+impl<T> From<!> for T {}
+
+fn any<T>() -> T {
+    loop {}
+}
+fn foo<T, U: From<T>>(_: T) -> U {
+    loop {}
+}
+fn bar() {
+    let _: () = foo(any());
+}
+        "#,
+        );
+    }
 }

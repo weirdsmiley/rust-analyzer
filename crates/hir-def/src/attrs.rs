@@ -140,6 +140,7 @@ fn match_attr_flags(attr_flags: &mut AttrFlags, attr: ast::Meta) -> ControlFlow<
                 "must_use" => attr_flags.insert(AttrFlags::IS_MUST_USE),
                 "path" => attr_flags.insert(AttrFlags::HAS_PATH),
                 "unstable" => attr_flags.insert(AttrFlags::IS_UNSTABLE),
+                "rustc_reservation_impl" => attr_flags.insert(AttrFlags::RUSTC_RESERVATION_IMPL),
                 "export_name" => {
                     if let Some(value) = attr.value_string()
                         && *value == *"main"
