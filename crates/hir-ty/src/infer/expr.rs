@@ -610,34 +610,13 @@ impl<'db> InferenceContext<'_, 'db> {
                 self.deferred_cast_checks.push(CastCheck::new(tgt_expr, *expr, expr_ty, cast_ty));
                 cast_ty
             }
-            Expr::Ref { expr, rawness, mutability } => {
-                let mutability = lower_mutability(*mutability);
-                let expectation = if let Some((exp_inner, exp_rawness, exp_mutability)) = expected
-                    .only_has_type(&mut self.table)
-                    .as_ref()
-                    .and_then(|t| t.as_reference_or_ptr())
-                {
-                    if exp_mutability == Mutability::Mut && mutability == Mutability::Not {
-                        // FIXME: record type error - expected mut reference but found shared ref,
-                        // which cannot be coerced
-                    }
-                    if exp_rawness == Rawness::Ref && *rawness == Rawness::RawPtr {
-                        // FIXME: record type error - expected reference but found ptr,
-                        // which cannot be coerced
-                    }
-                    Expectation::rvalue_hint(self, exp_inner)
-                } else {
-                    Expectation::none()
-                };
-                let inner_ty = self.infer_expr_inner(*expr, &expectation, ExprIsRead::Yes);
-                match rawness {
-                    Rawness::RawPtr => Ty::new_ptr(self.interner(), inner_ty, mutability),
-                    Rawness::Ref => {
-                        let lt = self.table.next_region_var(tgt_expr.into());
-                        Ty::new_ref(self.interner(), lt, inner_ty, mutability)
-                    }
-                }
-            }
+            Expr::Ref { expr, rawness, mutability } => self.infer_ref_expr(
+                *rawness,
+                lower_mutability(*mutability),
+                *expr,
+                expected,
+                tgt_expr,
+            ),
             &Expr::Box { expr } => self.infer_expr_box(expr, expected),
             Expr::UnaryOp { expr, op } => self.infer_unop_expr(*op, *expr, expected, tgt_expr),
             Expr::BinaryOp { lhs, rhs, op } => match op {
@@ -772,7 +751,12 @@ impl<'db> InferenceContext<'_, 'db> {
 
                 Ty::new_tup(self.interner(), &tys)
             }
-            Expr::Array(array) => self.infer_expr_array(tgt_expr, array, expected),
+            Expr::Array(Array::ElementList { elements }) => {
+                self.infer_array_elements_expr(elements, expected, tgt_expr)
+            }
+            Expr::Array(Array::Repeat { initializer, repeat }) => {
+                self.infer_array_repeat_expr(*initializer, *repeat, expected, tgt_expr)
+            }
             Expr::Literal(lit) => match lit {
                 Literal::Bool(..) => self.types.types.bool,
                 Literal::String(..) => self.types.types.static_str_ref,
@@ -966,6 +950,54 @@ impl<'db> InferenceContext<'_, 'db> {
             self.diverges = Diverges::Always;
         }
         ty
+    }
+
+    fn infer_ref_expr(
+        &mut self,
+        rawness: Rawness,
+        mutbl: Mutability,
+        oprnd: ExprId,
+        expected: &Expectation<'db>,
+        expr: ExprId,
+    ) -> Ty<'db> {
+        let hint = expected.only_has_type(&mut self.table).map_or(Expectation::None, |ty| {
+            match self.table.resolve_vars_with_obligations(ty).kind() {
+                TyKind::Ref(_, ty, _) | TyKind::RawPtr(ty, _) => {
+                    if self.is_syntactic_place_expr(oprnd) {
+                        // Places may legitimately have unsized types.
+                        // For example, dereferences of a wide pointer and
+                        // the last field of a struct can be unsized.
+                        Expectation::has_type(ty)
+                    } else {
+                        Expectation::rvalue_hint(self, ty)
+                    }
+                }
+                _ => Expectation::None,
+            }
+        });
+        let ty = self.infer_expr_inner(oprnd, &hint, ExprIsRead::No);
+
+        match rawness {
+            Rawness::RawPtr => Ty::new_ptr(self.interner(), ty, mutbl),
+            Rawness::Ref => {
+                // Note: at this point, we cannot say what the best lifetime
+                // is to use for resulting pointer. We want to use the
+                // shortest lifetime possible so as to avoid spurious borrowck
+                // errors. Moreover, the longest lifetime will depend on the
+                // precise details of the value whose address is being taken
+                // (and how long it is valid), which we don't know yet until
+                // type inference is complete.
+                //
+                // Therefore, here we simply generate a region variable. The
+                // region inferencer will then select a suitable value.
+                // Finally, borrowck will infer the value of the region again,
+                // this time with enough precision to check that the value
+                // whose address was taken can actually be made to live as long
+                // as it needs to live.
+                let region = self.table.next_region_var(expr.into());
+                Ty::new_ref(self.interner(), region, ty, mutbl)
+            }
+        }
     }
 
     fn infer_await_expr(&mut self, expr: ExprId, awaitee: ExprId) -> Ty<'db> {
@@ -1336,68 +1368,93 @@ impl<'db> InferenceContext<'_, 'db> {
         oprnd_t
     }
 
-    fn infer_expr_array(
+    fn infer_array_repeat_expr(
         &mut self,
-        expr: ExprId,
-        array: &Array,
+        element: ExprId,
+        count: ExprId,
         expected: &Expectation<'db>,
+        expr: ExprId,
     ) -> Ty<'db> {
-        let elem_ty = match expected
-            .to_option(&mut self.table)
-            .map(|t| self.table.try_structurally_resolve_type(expr.into(), t).kind())
-        {
-            Some(TyKind::Array(st, _) | TyKind::Slice(st)) => st,
-            _ => self.table.next_ty_var(expr.into()),
-        };
-
-        let krate = self.resolver.krate();
-
-        let expected = Expectation::has_type(elem_ty);
-        let (elem_ty, len) = match array {
-            Array::ElementList { elements, .. } if elements.is_empty() => {
-                (elem_ty, consteval::usize_const(self.db, Some(0), krate))
+        let interner = self.interner();
+        let usize = self.types.types.usize;
+        let count_ct = match self.store[count] {
+            Expr::Underscore => {
+                self.write_expr_ty(count, usize);
+                self.table.next_const_var(count.into())
             }
-            Array::ElementList { elements, .. } => {
-                let mut coerce = CoerceMany::with_coercion_sites(elem_ty, elements);
-                for &expr in elements.iter() {
-                    let cur_elem_ty = self.infer_expr_inner(expr, &expected, ExprIsRead::Yes);
-                    coerce.coerce(
-                        self,
-                        &ObligationCause::new(expr),
-                        expr,
-                        cur_elem_ty,
-                        ExprIsRead::Yes,
-                    );
-                }
-                (
-                    coerce.complete(self),
-                    consteval::usize_const(self.db, Some(elements.len() as u128), krate),
-                )
-            }
-            &Array::Repeat { initializer, repeat } => {
-                self.infer_expr_coerce(
-                    initializer,
-                    &Expectation::has_type(elem_ty),
-                    ExprIsRead::Yes,
-                );
-                let usize = self.types.types.usize;
-                let len = match self.store[repeat] {
-                    Expr::Underscore => {
-                        self.write_expr_ty(repeat, usize);
-                        self.table.next_const_var(repeat.into())
-                    }
-                    _ => {
-                        self.infer_expr(repeat, &Expectation::HasType(usize), ExprIsRead::Yes);
-                        consteval::eval_to_const(repeat, self)
-                    }
-                };
-
-                (elem_ty, len)
+            _ => {
+                self.infer_expr(count, &Expectation::HasType(usize), ExprIsRead::Yes);
+                consteval::eval_to_const(count, self)
             }
         };
-        // Try to evaluate unevaluated constant, and insert variable if is not possible.
-        let len = self.insert_const_vars_shallow(len);
-        Ty::new_array_with_const_len(self.interner(), elem_ty, len)
+        let count = self.table.try_structurally_resolve_const(count.into(), count_ct);
+        let count = self.insert_const_vars_shallow(count);
+
+        let uty = match expected {
+            Expectation::HasType(uty) => uty.builtin_index(),
+            _ => None,
+        };
+
+        let t = match uty {
+            Some(uty) => {
+                self.infer_expr_coerce(element, &Expectation::has_type(uty), ExprIsRead::Yes);
+                uty
+            }
+            None => {
+                let ty = self.table.next_ty_var(element.into());
+                self.infer_expr(element, &Expectation::has_type(ty), ExprIsRead::Yes);
+                ty
+            }
+        };
+
+        // We defer checking whether the element type is `Copy` as it is possible to have
+        // an inference variable as a repeat count and it seems unlikely that `Copy` would
+        // have inference side effects required for type checking to succeed.
+        // FIXME: Do it here like rustc.
+        // self.deferred_repeat_expr_checks.borrow_mut().push((element, element_ty, count));
+
+        let ty = Ty::new_array_with_const_len(interner, t, count);
+        self.table.register_wf_obligation(ty.into(), ObligationCause::new(expr));
+        ty
+    }
+
+    fn infer_array_elements_expr(
+        &mut self,
+        args: &[ExprId],
+        expected: &Expectation<'db>,
+        expr: ExprId,
+    ) -> Ty<'db> {
+        let element_ty = if !args.is_empty() {
+            let coerce_to = expected
+                .to_option(&mut self.table)
+                .and_then(|uty| {
+                    self.table
+                        .resolve_vars_with_obligations(uty)
+                        .builtin_index()
+                        // Avoid using the original type variable as the coerce_to type, as it may resolve
+                        // during the first coercion instead of being the LUB type.
+                        .filter(|t| !self.table.resolve_vars_with_obligations(*t).is_ty_var())
+                })
+                .unwrap_or_else(|| self.table.next_ty_var(expr.into()));
+            let mut coerce = CoerceMany::with_coercion_sites(coerce_to, args);
+
+            for &e in args {
+                // FIXME: the element expectation should use
+                // `try_structurally_resolve_and_adjust_for_branches` just like in `if` and `match`.
+                // While that fixes nested coercion, it will break [some
+                // code like this](https://github.com/rust-lang/rust/pull/140283#issuecomment-2958776528).
+                // If we find a way to support recursive tuple coercion, this break can be avoided.
+                let e_ty =
+                    self.infer_expr_inner(e, &Expectation::has_type(coerce_to), ExprIsRead::Yes);
+                let cause = ObligationCause::new(e);
+                coerce.coerce(self, &cause, e, e_ty, ExprIsRead::Yes);
+            }
+            coerce.complete(self)
+        } else {
+            self.table.next_ty_var(expr.into())
+        };
+        let array_len = args.len() as u128;
+        Ty::new_array(self.interner(), element_ty, array_len)
     }
 
     pub(super) fn infer_return(&mut self, expr: ExprId) {
