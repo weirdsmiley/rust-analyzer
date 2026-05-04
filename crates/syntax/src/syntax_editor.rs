@@ -216,6 +216,17 @@ impl SyntaxEdit {
     pub fn find_annotation(&self, annotation: SyntaxAnnotation) -> &[SyntaxElement] {
         self.annotations.get(&annotation).as_ref().map_or(&[], |it| it.as_slice())
     }
+
+    pub fn find_element(&self, old_node: &SyntaxNode) -> Option<SyntaxNode> {
+        let old_root_start = self.old_root.text_range().start();
+        let old_start = old_node.text_range().start() - old_root_start;
+        let new_root_start = self.new_root.text_range().start();
+        let kind = old_node.kind();
+
+        self.new_root
+            .descendants()
+            .find(|it| it.kind() == kind && it.text_range().start() - new_root_start == old_start)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
