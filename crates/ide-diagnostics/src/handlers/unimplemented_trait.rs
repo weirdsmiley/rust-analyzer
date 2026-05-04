@@ -50,4 +50,23 @@ fn bar() {
         "#,
         );
     }
+
+    #[test]
+    fn async_closure_does_not_trigger() {
+        check_diagnostics(
+            r#"
+//- minicore: async_fn
+fn spawn_in<AsyncFn>(_f: AsyncFn)
+where
+    AsyncFn: AsyncFnOnce(),
+{
+}
+
+fn foo() {
+    spawn_in(async move || {});
+}
+
+        "#,
+        );
+    }
 }

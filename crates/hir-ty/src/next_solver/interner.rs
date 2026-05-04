@@ -1461,10 +1461,6 @@ impl<'db> Interner for DbInterner<'db> {
             SolverTraitLangItem, self, def_id.0, lang_item;
 
             ignore = {
-                AsyncFnKindHelper,
-                BikeshedGuaranteedNoDrop,
-                FusedIterator,
-                Field,
                 AsyncFnOnceOutput, // This is incorrectly marked as `SolverTraitLangItem`, and is not used by the solver.
             }
 
@@ -1493,6 +1489,10 @@ impl<'db> Interner for DbInterner<'db> {
             AsyncFnMut,
             AsyncFnOnce,
             TrivialClone,
+            AsyncFnKindHelper,
+            BikeshedGuaranteedNoDrop,
+            FusedIterator,
+            Field,
         )
     }
 
@@ -1509,10 +1509,7 @@ impl<'db> Interner for DbInterner<'db> {
                     SolverLangItem, self, id;
 
                     ignore = {
-                        AsyncFnKindUpvars,
                         DynMetadata,
-                        FieldBase,
-                        FieldType,
                     }
 
                     Metadata,
@@ -1522,6 +1519,9 @@ impl<'db> Interner for DbInterner<'db> {
                     CallRefFuture,
                     CallOnceFuture,
                     AsyncFnOnceOutput,
+                    AsyncFnKindUpvars,
+                    FieldBase,
+                    FieldType,
                 )
             }
             SolverDefId::AdtId(AdtId::StructId(id)) => {
@@ -1553,10 +1553,6 @@ impl<'db> Interner for DbInterner<'db> {
             SolverTraitLangItem, self, def_id.0;
 
             ignore = {
-                AsyncFnKindHelper,
-                BikeshedGuaranteedNoDrop,
-                FusedIterator,
-                Field,
                 AsyncFnOnceOutput, // This is incorrectly marked as `SolverTraitLangItem`, and is not used by the solver.
             }
 
@@ -1585,6 +1581,10 @@ impl<'db> Interner for DbInterner<'db> {
             AsyncFnMut,
             AsyncFnOnce,
             TrivialClone,
+            AsyncFnKindHelper,
+            BikeshedGuaranteedNoDrop,
+            FusedIterator,
+            Field,
         )
     }
 
