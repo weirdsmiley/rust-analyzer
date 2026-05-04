@@ -11,14 +11,13 @@ use hir_def::{
     item_tree::FieldsShape,
     lang_item::LangItems,
     layout::{TagEncoding, Variants},
-    resolver::{HasResolver, TypeNs, ValueNs},
+    resolver::{HasResolver, ValueNs},
     signatures::{
         EnumSignature, FunctionSignature, StaticFlags, StaticSignature, StructFlags,
         StructSignature, TraitSignature,
     },
 };
-use hir_expand::{InFile, mod_path::path, name::Name};
-use intern::sym;
+use hir_expand::{InFile, mod_path::path};
 use la_arena::ArenaMap;
 use macros::GenericTypeVisitable;
 use rustc_abi::{Size, TargetDataLayout};
@@ -692,15 +691,9 @@ impl<'a, 'db: 'a> Evaluator<'a, 'db> {
             mir_or_dyn_index_cache: RefCell::new(Default::default()),
             unused_locals_store: RefCell::new(Default::default()),
             cached_ptr_size,
-            cached_fn_trait_func: lang_items
-                .Fn
-                .and_then(|x| x.trait_items(db).method_by_name(&Name::new_symbol_root(sym::call))),
-            cached_fn_mut_trait_func: lang_items.FnMut.and_then(|x| {
-                x.trait_items(db).method_by_name(&Name::new_symbol_root(sym::call_mut))
-            }),
-            cached_fn_once_trait_func: lang_items.FnOnce.and_then(|x| {
-                x.trait_items(db).method_by_name(&Name::new_symbol_root(sym::call_once))
-            }),
+            cached_fn_trait_func: lang_items.Fn_call,
+            cached_fn_mut_trait_func: lang_items.FnMut_call_mut,
+            cached_fn_once_trait_func: lang_items.FnOnce_call_once,
             infcx,
         })
     }
@@ -3036,10 +3029,7 @@ impl<'a, 'db: 'a> Evaluator<'a, 'db> {
         _metadata: &[u8],
         span: MirSpan,
     ) -> Result<'db, ()> {
-        let Some(drop_fn) = (|| {
-            let drop_trait = self.lang_items().Drop?;
-            drop_trait.trait_items(self.db).method_by_name(&Name::new_symbol_root(sym::drop))
-        })() else {
+        let Some(drop_fn) = self.lang_items().Drop_drop else {
             // in some tests we don't have drop trait in minicore, and
             // we can ignore drop in them.
             return Ok(());
@@ -3150,16 +3140,9 @@ pub fn render_const_using_debug_impl<'db>(
         drop_flags: DropFlags::default(),
     };
     let data = evaluator.allocate_allocation_in_heap(locals, c)?;
+    let lang_items = evaluator.interner().lang_items();
     let resolver = owner.resolver(db);
-    let Some(TypeNs::TraitId(debug_trait)) = resolver.resolve_path_in_type_ns_fully(
-        db,
-        &hir_def::expr_store::path::Path::from_known_path_with_no_generic(path![core::fmt::Debug]),
-    ) else {
-        not_supported!("core::fmt::Debug not found");
-    };
-    let Some(debug_fmt_fn) =
-        debug_trait.trait_items(db).method_by_name(&Name::new_symbol_root(sym::fmt))
-    else {
+    let Some(debug_fmt_fn) = lang_items.Debug_fmt else {
         not_supported!("core::fmt::Debug::fmt not found");
     };
     // a1 = &[""]

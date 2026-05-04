@@ -2,8 +2,7 @@
 
 use std::collections::hash_map;
 
-use hir_def::{GenericParamId, TraitId, hir::ExprId};
-use intern::{Symbol, sym};
+use hir_def::{FunctionId, GenericParamId, TraitId, hir::ExprId};
 use rustc_ast_ir::Mutability;
 use rustc_type_ir::inherent::{IntoKind, Ty as _};
 use syntax::ast::{ArithOp, BinaryOp, UnaryOp};
@@ -283,16 +282,16 @@ impl<'a, 'db> InferenceContext<'a, 'db> {
         expr: ExprId,
         lhs_ty: Ty<'db>,
         opt_rhs: Option<(ExprId, Ty<'db>)>,
-        (opname, trait_did): (Symbol, Option<TraitId>),
+        (op_method, trait_did): (Option<FunctionId>, Option<TraitId>),
     ) -> Result<MethodCallee<'db>, Vec<NextSolverError<'db>>> {
-        let Some(trait_did) = trait_did else {
+        let (Some(trait_did), Some(op_method)) = (trait_did, op_method) else {
             // Bail if the operator trait is not defined.
             return Err(vec![]);
         };
 
         debug!(
             "lookup_op_method(lhs_ty={:?}, opname={:?}, trait_did={:?})",
-            lhs_ty, opname, trait_did
+            lhs_ty, op_method, trait_did
         );
 
         let opt_rhs_ty = opt_rhs.map(|it| it.1);
@@ -304,8 +303,8 @@ impl<'a, 'db> InferenceContext<'a, 'db> {
         let treat_opaques = TreatNotYetDefinedOpaques::AsInfer;
         let method = self.table.lookup_method_for_operator(
             cause,
-            opname,
             trait_did,
+            op_method,
             lhs_ty,
             opt_rhs_ty,
             treat_opaques,
@@ -360,20 +359,20 @@ impl<'a, 'db> InferenceContext<'a, 'db> {
         }
     }
 
-    fn lang_item_for_bin_op(&self, op: BinaryOp) -> (Symbol, Option<TraitId>) {
-        let (method_name, trait_lang_item) =
+    fn lang_item_for_bin_op(&self, op: BinaryOp) -> (Option<FunctionId>, Option<TraitId>) {
+        let (method, trait_lang_item) =
             crate::lang_items::lang_items_for_bin_op(self.lang_items, op)
                 .expect("invalid operator provided");
-        (method_name, trait_lang_item)
+        (method, trait_lang_item)
     }
 
-    fn lang_item_for_unop(&self, op: UnaryOp) -> (Symbol, Option<TraitId>) {
-        let (method_name, trait_lang_item) = match op {
-            UnaryOp::Not => (sym::not, self.lang_items.Not),
-            UnaryOp::Neg => (sym::neg, self.lang_items.Neg),
+    fn lang_item_for_unop(&self, op: UnaryOp) -> (Option<FunctionId>, Option<TraitId>) {
+        let (method, trait_lang_item) = match op {
+            UnaryOp::Not => (self.lang_items.Not_not, self.lang_items.Not),
+            UnaryOp::Neg => (self.lang_items.Neg_neg, self.lang_items.Neg),
             UnaryOp::Deref => panic!("Deref is not overloadable"),
         };
-        (method_name, trait_lang_item)
+        (method, trait_lang_item)
     }
 }
 
