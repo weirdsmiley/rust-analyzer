@@ -701,6 +701,37 @@ pub mod ops {
         unsafe impl<T> SliceIndex<[T]> for usize {
             type Output = T;
         }
+
+        macro_rules! impl_index_range {
+            ( $($range:ty,)* ) => {
+                $(
+                    unsafe impl<T> SliceIndex<[T]> for $range {
+                        type Output = [T];
+                    }
+                )*
+            }
+        }
+
+        // region:range
+        impl_index_range!(
+            crate::ops::RangeFull,
+            crate::ops::Range<usize>,
+            crate::ops::RangeFrom<usize>,
+            crate::ops::RangeTo<usize>,
+            crate::ops::RangeInclusive<usize>,
+            crate::ops::RangeToInclusive<usize>,
+        );
+        // endregion:range
+
+        // region:new_range
+        impl_index_range!(
+            crate::range::Range<usize>,
+            crate::range::RangeFrom<usize>,
+            crate::range::RangeInclusive<usize>,
+            crate::range::RangeToInclusive<usize>,
+        );
+        // endregion:new_range
+
         // endregion:slice
     }
     pub use self::index::{Index, IndexMut};
