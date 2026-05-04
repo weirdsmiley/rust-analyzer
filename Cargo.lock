@@ -1231,6 +1231,7 @@ dependencies = [
 name = "intern"
 version = "0.0.0"
 dependencies = [
+ "arrayvec",
  "dashmap",
  "hashbrown 0.14.5",
  "rayon",

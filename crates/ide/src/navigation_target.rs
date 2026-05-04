@@ -580,7 +580,7 @@ impl TryToNav for hir::Field {
                 |(FileRange { file_id, range: full_range }, focus_range)| {
                     NavigationTarget::from_syntax(
                         file_id,
-                        Symbol::integer(self.index()),
+                        sym::Integer::get(self.index()),
                         focus_range,
                         full_range,
                         SymbolKind::Field,
