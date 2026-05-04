@@ -31,7 +31,7 @@ use syntax::{
 };
 use triomphe::Arc;
 
-use crate::{AssocItem, Field, Function, GenericDef, Local, Trait, Type};
+use crate::{AssocItem, Field, Function, GenericDef, Local, Trait, Type, Variant};
 
 pub use hir_def::VariantId;
 pub use hir_ty::{
@@ -128,6 +128,7 @@ diagnostics![AnyDiagnostic<'db> ->
     NonExhaustiveRecordExpr,
     NoSuchField,
     MismatchedArrayPatLen,
+    DuplicateField,
     PatternArgInExternFn,
     PrivateAssocItem,
     PrivateField,
@@ -265,6 +266,12 @@ pub struct NoSuchField {
     pub field: InFile<AstPtr<Either<ast::RecordExprField, ast::RecordPatField>>>,
     pub private: Option<Field>,
     pub variant: VariantId,
+}
+
+#[derive(Debug)]
+pub struct DuplicateField {
+    pub field: InFile<AstPtr<Either<ast::RecordExprField, ast::RecordPatField>>>,
+    pub variant: Variant,
 }
 
 #[derive(Debug)]
@@ -763,6 +770,15 @@ impl<'db> AnyDiagnostic<'db> {
             &InferenceDiagnostic::MismatchedArrayPatLen { pat, expected, found, has_rest } => {
                 let pat = pat_syntax(pat)?.map(Into::into);
                 MismatchedArrayPatLen { pat, expected, found, has_rest }.into()
+            }
+            &InferenceDiagnostic::DuplicateField { field: expr, variant } => {
+                let expr_or_pat = match expr {
+                    ExprOrPatId::ExprId(expr) => {
+                        source_map.field_syntax(expr).map(AstPtr::wrap_left)
+                    }
+                    ExprOrPatId::PatId(pat) => source_map.pat_field_syntax(pat),
+                };
+                DuplicateField { field: expr_or_pat, variant: variant.into() }.into()
             }
             &InferenceDiagnostic::MismatchedArgCount { call_expr, expected, found } => {
                 MismatchedArgCount { call_expr: expr_syntax(call_expr)?, expected, found }.into()
