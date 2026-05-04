@@ -116,4 +116,25 @@ fn foo() {
         "#,
         );
     }
+
+    #[test]
+    fn async_closure_does_not_trigger() {
+        check_diagnostics(
+            r#"
+//- minicore: async_fn
+struct Task<R>(R);
+fn spawn_in<AsyncFn, R>(_f: AsyncFn) -> Task<R>
+where
+    R: 'static,
+    AsyncFn: AsyncFnOnce(&()) -> R + 'static,
+{
+    loop {}
+}
+
+fn foo() {
+    spawn_in(async move |cx| {});
+}
+        "#,
+        );
+    }
 }

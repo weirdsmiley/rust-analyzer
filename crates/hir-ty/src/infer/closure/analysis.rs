@@ -44,7 +44,7 @@ use macros::{TypeFoldable, TypeVisitable};
 use rustc_ast_ir::Mutability;
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use rustc_type_ir::{
-    BoundVar, ClosureKind, TypeVisitableExt as _,
+    BoundVar, ClosureKind,
     inherent::{AdtDef as _, GenericArgs as _, IntoKind as _, Ty as _},
 };
 use smallvec::{SmallVec, smallvec};
@@ -403,9 +403,7 @@ impl<'a, 'db> InferenceContext<'a, 'db> {
         // For coroutine-closures, we additionally must compute the
         // `coroutine_captures_by_ref_ty` type, which is used to generate the by-ref
         // version of the coroutine-closure's output coroutine.
-        if let UpvarArgs::CoroutineClosure(args) = args
-            && !args.references_error()
-        {
+        if let UpvarArgs::CoroutineClosure(args) = args {
             let closure_env_region: Region<'_> = Region::new_bound(
                 self.interner(),
                 rustc_type_ir::INNERMOST,
