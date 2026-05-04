@@ -1658,7 +1658,9 @@ fn foo(x: Option<i32>, y: Option<i32>) {
     let _f = || {
         x
             .and(y)
-            .map(|it| it+2)
+            .map(|it| {
+                it+2
+            })
             .$0
     };
 }
@@ -1668,7 +1670,9 @@ fn foo(x: Option<i32>, y: Option<i32>) {
     let _f = || {
         let $0 = x
 .and(y)
-.map(|it| it+2);
+.map(|it| {
+    it+2
+});
     };
 }
 "#,
