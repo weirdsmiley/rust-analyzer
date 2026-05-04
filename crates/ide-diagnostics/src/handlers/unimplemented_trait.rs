@@ -2,7 +2,7 @@ use hir::HirDisplay;
 
 use crate::{Diagnostic, DiagnosticCode, DiagnosticsContext};
 
-// Diagnostic: type-must-be-known
+// Diagnostic: unimplemented-trait
 //
 // This diagnostic is triggered when rust-analyzer cannot infer some type.
 pub(crate) fn unimplemented_trait<'db>(
