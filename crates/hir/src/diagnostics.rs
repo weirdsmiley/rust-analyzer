@@ -31,7 +31,7 @@ use syntax::{
 };
 use triomphe::Arc;
 
-use crate::{AssocItem, Field, Function, GenericDef, Local, Trait, Type};
+use crate::{AssocItem, Field, Function, GenericDef, Local, Trait, Type, Variant};
 
 pub use hir_def::VariantId;
 pub use hir_ty::{
@@ -271,7 +271,7 @@ pub struct NoSuchField {
 #[derive(Debug)]
 pub struct DuplicateField {
     pub field: InFile<AstPtr<Either<ast::RecordExprField, ast::RecordPatField>>>,
-    pub variant: VariantId,
+    pub variant: Variant,
 }
 
 #[derive(Debug)]
@@ -778,7 +778,7 @@ impl<'db> AnyDiagnostic<'db> {
                     }
                     ExprOrPatId::PatId(pat) => source_map.pat_field_syntax(pat),
                 };
-                DuplicateField { field: expr_or_pat, variant }.into()
+                DuplicateField { field: expr_or_pat, variant: variant.into() }.into()
             }
             &InferenceDiagnostic::MismatchedArgCount { call_expr, expected, found } => {
                 MismatchedArgCount { call_expr: expr_syntax(call_expr)?, expected, found }.into()
