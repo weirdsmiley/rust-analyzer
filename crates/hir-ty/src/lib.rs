@@ -573,10 +573,7 @@ pub fn callable_sig_from_fn_trait<'db>(
         return None;
     };
 
-    let fn_once_trait = lang_items.FnOnce?;
-    let output_assoc_type = fn_once_trait
-        .trait_items(db)
-        .associated_type_by_name(&Name::new_symbol_root(sym::Output))?;
+    let output_assoc_type = lang_items.FnOnceOutput?;
     let output_projection = Ty::new_alias(
         interner,
         AliasTy::new(

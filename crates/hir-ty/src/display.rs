@@ -1726,11 +1726,9 @@ impl<'db> HirDisplay<'db> for Ty<'db> {
                     subst.split_coroutine_args();
                 match kind {
                     HirClosureKind::Coroutine { kind: CoroutineKind::Async, .. } => {
-                        let future_trait = f.lang_items().Future;
-                        let output = future_trait.and_then(|t| {
-                            t.trait_items(db)
-                                .associated_type_by_name(&Name::new_symbol_root(sym::Output))
-                        });
+                        let lang_items = f.lang_items();
+                        let future_trait = lang_items.Future;
+                        let output = lang_items.FutureOutput;
                         write!(f, "impl ")?;
                         if let Some(t) = future_trait {
                             f.start_location_link(t.into());
@@ -1752,11 +1750,9 @@ impl<'db> HirDisplay<'db> for Ty<'db> {
                         write!(f, ">")?;
                     }
                     HirClosureKind::Coroutine { kind: CoroutineKind::Gen, .. } => {
-                        let iterator_trait = f.lang_items().Iterator;
-                        let item = iterator_trait.and_then(|t| {
-                            t.trait_items(db)
-                                .associated_type_by_name(&Name::new_symbol_root(sym::Item))
-                        });
+                        let lang_items = f.lang_items();
+                        let iterator_trait = lang_items.Iterator;
+                        let item = lang_items.IteratorItem;
                         write!(f, "impl ")?;
                         if let Some(t) = iterator_trait {
                             f.start_location_link(t.into());
@@ -1778,11 +1774,9 @@ impl<'db> HirDisplay<'db> for Ty<'db> {
                         write!(f, ">")?;
                     }
                     HirClosureKind::Coroutine { kind: CoroutineKind::AsyncGen, .. } => {
-                        let async_iterator_trait = f.lang_items().AsyncIterator;
-                        let item = async_iterator_trait.and_then(|t| {
-                            t.trait_items(db)
-                                .associated_type_by_name(&Name::new_symbol_root(sym::Item))
-                        });
+                        let lang_items = f.lang_items();
+                        let async_iterator_trait = lang_items.AsyncIterator;
+                        let item = lang_items.AsyncIteratorItem;
                         write!(f, "impl ")?;
                         if let Some(t) = async_iterator_trait {
                             f.start_location_link(t.into());

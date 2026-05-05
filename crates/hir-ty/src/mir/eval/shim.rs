@@ -4,7 +4,6 @@
 use std::cmp::{self, Ordering};
 
 use hir_def::{attrs::AttrFlags, signatures::FunctionSignature};
-use hir_expand::name::Name;
 use intern::sym;
 use rustc_type_ir::inherent::{GenericArgs as _, IntoKind, SliceLike, Ty as _};
 use stdx::never;
@@ -1202,11 +1201,7 @@ impl<'a, 'db: 'a> Evaluator<'a, 'db> {
                     let addr = tuple.interval.addr.offset(offset);
                     args.push(IntervalAndTy::new(addr, field, self, locals)?);
                 }
-                if let Some(target) = self.lang_items().FnOnce
-                    && let Some(def) = target
-                        .trait_items(self.db)
-                        .method_by_name(&Name::new_symbol_root(sym::call_once))
-                {
+                if let Some(def) = self.lang_items().FnOnce_call_once {
                     self.exec_fn_trait(
                         def,
                         &args,

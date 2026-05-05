@@ -194,16 +194,115 @@ fn resolve_core_macro(
 
 impl LangItems {
     fn resolve_manually(&mut self, db: &dyn DefDatabase) {
-        (|| {
-            let into_future_into_future = self.IntoFutureIntoFuture?;
-            let ItemContainerId::TraitId(into_future) = into_future_into_future.loc(db).container
-            else {
-                return None;
+        let parent_trait =
+            |lang_item: &mut Option<TraitId>, def: Option<FunctionId>| match def?.loc(db).container
+            {
+                ItemContainerId::TraitId(trait_) => {
+                    *lang_item = Some(trait_);
+                    Some(trait_)
+                }
+                _ => None,
             };
-            self.IntoFuture = Some(into_future);
-            self.IntoFutureOutput = into_future
-                .trait_items(db)
-                .associated_type_by_name(&Name::new_symbol_root(sym::Output));
+        let assoc_types =
+            |trait_: TraitId, assoc_types: &mut [(&mut Option<TypeAliasId>, Symbol)]| {
+                let trait_items = trait_.trait_items(db);
+                for (assoc_type, name) in assoc_types {
+                    **assoc_type =
+                        trait_items.associated_type_by_name(&Name::new_symbol_root(name.clone()));
+                }
+            };
+        let methods = |trait_: TraitId, assoc_types: &mut [(&mut Option<FunctionId>, Symbol)]| {
+            let trait_items = trait_.trait_items(db);
+            for (assoc_type, name) in assoc_types {
+                **assoc_type = trait_items.method_by_name(&Name::new_symbol_root(name.clone()));
+            }
+        };
+        (|| {
+            let into_future = parent_trait(&mut self.IntoFuture, self.IntoFutureIntoFuture)?;
+            assoc_types(into_future, &mut [(&mut self.IntoFutureOutput, sym::Output)]);
+            Some(())
+        })();
+
+        (|| {
+            let into_iterator = parent_trait(&mut self.IntoIterator, self.IntoIterIntoIter)?;
+            assoc_types(
+                into_iterator,
+                &mut [
+                    (&mut self.IntoIteratorItem, sym::Item),
+                    (&mut self.IntoIterIntoIterType, sym::IntoIter),
+                ],
+            );
+            Some(())
+        })();
+
+        (|| {
+            assoc_types(self.Iterator?, &mut [(&mut self.IteratorItem, sym::Item)]);
+            Some(())
+        })();
+
+        (|| {
+            assoc_types(self.AsyncIterator?, &mut [(&mut self.AsyncIteratorItem, sym::Item)]);
+            Some(())
+        })();
+
+        for (op_trait, op_method, op_method_name) in [
+            (self.Fn, &mut self.Fn_call, sym::call),
+            (self.FnMut, &mut self.FnMut_call_mut, sym::call_mut),
+            (self.FnOnce, &mut self.FnOnce_call_once, sym::call_once),
+            (self.AsyncFn, &mut self.AsyncFn_async_call, sym::async_call),
+            (self.AsyncFnMut, &mut self.AsyncFnMut_async_call_mut, sym::async_call_mut),
+            (self.AsyncFnOnce, &mut self.AsyncFnOnce_async_call_once, sym::async_call_once),
+            (self.Not, &mut self.Not_not, sym::not),
+            (self.Neg, &mut self.Neg_neg, sym::neg),
+            (self.Add, &mut self.Add_add, sym::add),
+            (self.Mul, &mut self.Mul_mul, sym::mul),
+            (self.Sub, &mut self.Sub_sub, sym::sub),
+            (self.Div, &mut self.Div_div, sym::div),
+            (self.Rem, &mut self.Rem_rem, sym::rem),
+            (self.Shl, &mut self.Shl_shl, sym::shl),
+            (self.Shr, &mut self.Shr_shr, sym::shr),
+            (self.BitXor, &mut self.BitXor_bitxor, sym::bitxor),
+            (self.BitOr, &mut self.BitOr_bitor, sym::bitor),
+            (self.BitAnd, &mut self.BitAnd_bitand, sym::bitand),
+            (self.AddAssign, &mut self.AddAssign_add_assign, sym::add_assign),
+            (self.MulAssign, &mut self.MulAssign_mul_assign, sym::mul_assign),
+            (self.SubAssign, &mut self.SubAssign_sub_assign, sym::sub_assign),
+            (self.DivAssign, &mut self.DivAssign_div_assign, sym::div_assign),
+            (self.RemAssign, &mut self.RemAssign_rem_assign, sym::rem_assign),
+            (self.ShlAssign, &mut self.ShlAssign_shl_assign, sym::shl_assign),
+            (self.ShrAssign, &mut self.ShrAssign_shr_assign, sym::shr_assign),
+            (self.BitXorAssign, &mut self.BitXorAssign_bitxor_assign, sym::bitxor_assign),
+            (self.BitOrAssign, &mut self.BitOrAssign_bitor_assign, sym::bitor_assign),
+            (self.BitAndAssign, &mut self.BitAndAssign_bitand_assign, sym::bitand_assign),
+            (self.Drop, &mut self.Drop_drop, sym::drop),
+            (self.Debug, &mut self.Debug_fmt, sym::fmt),
+            (self.Deref, &mut self.Deref_deref, sym::deref),
+            (self.DerefMut, &mut self.DerefMut_deref_mut, sym::deref_mut),
+            (self.Index, &mut self.Index_index, sym::index),
+            (self.IndexMut, &mut self.IndexMut_index_mut, sym::index_mut),
+        ] {
+            (|| {
+                methods(op_trait?, &mut [(op_method, op_method_name)]);
+                Some(())
+            })();
+        }
+        (|| {
+            methods(
+                self.PartialEq?,
+                &mut [(&mut self.PartialEq_eq, sym::eq), (&mut self.PartialEq_ne, sym::ne)],
+            );
+            Some(())
+        })();
+        (|| {
+            methods(
+                self.PartialOrd?,
+                &mut [
+                    (&mut self.PartialOrd_le, sym::le),
+                    (&mut self.PartialOrd_lt, sym::lt),
+                    (&mut self.PartialOrd_ge, sym::ge),
+                    (&mut self.PartialOrd_gt, sym::gt),
+                ],
+            );
             Some(())
         })();
     }
@@ -567,6 +666,53 @@ language_item_table! { LangItems =>
     core::clone, Clone, CloneDerive;
 
     @resolve_manually:
-    IntoFuture,               TraitId;
-    IntoFutureOutput,         TypeAliasId;
+
+    IntoFuture,                    TraitId;
+    IntoFutureOutput,              TypeAliasId;
+    IntoIterator,                  TraitId;
+    IntoIteratorItem,              TypeAliasId;
+    IntoIterIntoIterType,          TypeAliasId;
+    IteratorItem,                  TypeAliasId;
+    AsyncIteratorItem,             TypeAliasId;
+
+    Fn_call,                       FunctionId;
+    FnMut_call_mut,                FunctionId;
+    FnOnce_call_once,              FunctionId;
+    AsyncFn_async_call,            FunctionId;
+    AsyncFnMut_async_call_mut,     FunctionId;
+    AsyncFnOnce_async_call_once,   FunctionId;
+    Not_not,                       FunctionId;
+    Neg_neg,                       FunctionId;
+    Add_add,                       FunctionId;
+    Mul_mul,                       FunctionId;
+    Sub_sub,                       FunctionId;
+    Div_div,                       FunctionId;
+    Rem_rem,                       FunctionId;
+    Shl_shl,                       FunctionId;
+    Shr_shr,                       FunctionId;
+    BitXor_bitxor,                 FunctionId;
+    BitOr_bitor,                   FunctionId;
+    BitAnd_bitand,                 FunctionId;
+    AddAssign_add_assign,          FunctionId;
+    MulAssign_mul_assign,          FunctionId;
+    SubAssign_sub_assign,          FunctionId;
+    DivAssign_div_assign,          FunctionId;
+    RemAssign_rem_assign,          FunctionId;
+    ShlAssign_shl_assign,          FunctionId;
+    ShrAssign_shr_assign,          FunctionId;
+    BitXorAssign_bitxor_assign,    FunctionId;
+    BitOrAssign_bitor_assign,      FunctionId;
+    BitAndAssign_bitand_assign,    FunctionId;
+    PartialEq_eq,                  FunctionId;
+    PartialEq_ne,                  FunctionId;
+    PartialOrd_le,                 FunctionId;
+    PartialOrd_lt,                 FunctionId;
+    PartialOrd_ge,                 FunctionId;
+    PartialOrd_gt,                 FunctionId;
+    Drop_drop,                     FunctionId;
+    Debug_fmt,                     FunctionId;
+    Deref_deref,                   FunctionId;
+    DerefMut_deref_mut,            FunctionId;
+    Index_index,                   FunctionId;
+    IndexMut_index_mut,            FunctionId;
 }

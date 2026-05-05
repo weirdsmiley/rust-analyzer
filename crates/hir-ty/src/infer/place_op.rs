@@ -1,7 +1,6 @@
 //! Inference of *place operators*: deref and indexing (operators that create places, as opposed to values).
 
 use hir_def::hir::ExprId;
-use intern::sym;
 use rustc_ast_ir::Mutability;
 use rustc_type_ir::inherent::{IntoKind, Ty as _};
 use tracing::debug;
@@ -195,9 +194,9 @@ impl<'a, 'db> InferenceContext<'a, 'db> {
     ) -> Option<InferOk<'db, MethodCallee<'db>>> {
         debug!("try_overloaded_place_op({:?},{:?})", base_ty, op);
 
-        let (Some(imm_tr), imm_op) = (match op {
-            PlaceOp::Deref => (self.lang_items.Deref, sym::deref),
-            PlaceOp::Index => (self.lang_items.Index, sym::index),
+        let (Some(imm_tr), Some(imm_op)) = (match op {
+            PlaceOp::Deref => (self.lang_items.Deref, self.lang_items.Deref_deref),
+            PlaceOp::Index => (self.lang_items.Index, self.lang_items.Index_index),
         }) else {
             // Bail if `Deref` or `Index` isn't defined.
             return None;
@@ -208,8 +207,8 @@ impl<'a, 'db> InferenceContext<'a, 'db> {
         let treat_opaques = TreatNotYetDefinedOpaques::AsInfer;
         self.table.lookup_method_for_operator(
             ObligationCause::new(expr),
-            imm_op,
             imm_tr,
+            imm_op,
             base_ty,
             opt_rhs_ty,
             treat_opaques,
@@ -226,9 +225,9 @@ impl<'a, 'db> InferenceContext<'a, 'db> {
         debug!("try_mutable_overloaded_place_op({:?},{:?})", base_ty, op);
 
         let lang_items = table.interner().lang_items();
-        let (Some(mut_tr), mut_op) = (match op {
-            PlaceOp::Deref => (lang_items.DerefMut, sym::deref_mut),
-            PlaceOp::Index => (lang_items.IndexMut, sym::index_mut),
+        let (Some(mut_tr), Some(mut_op)) = (match op {
+            PlaceOp::Deref => (lang_items.DerefMut, lang_items.DerefMut_deref_mut),
+            PlaceOp::Index => (lang_items.IndexMut, lang_items.IndexMut_index_mut),
         }) else {
             // Bail if `DerefMut` or `IndexMut` isn't defined.
             return None;
@@ -241,8 +240,8 @@ impl<'a, 'db> InferenceContext<'a, 'db> {
         let treat_opaques = TreatNotYetDefinedOpaques::AsInfer;
         table.lookup_method_for_operator(
             ObligationCause::new(expr),
-            mut_op,
             mut_tr,
+            mut_op,
             base_ty,
             opt_rhs_ty,
             treat_opaques,

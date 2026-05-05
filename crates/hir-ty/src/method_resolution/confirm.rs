@@ -2,7 +2,7 @@
 //! is valid and registering all obligations.
 
 use hir_def::{
-    FunctionId, GenericDefId, GenericParamId, ItemContainerId, TraitId,
+    FunctionId, GenericDefId, GenericParamId, TraitId,
     expr_store::path::{GenericArg as HirGenericArg, GenericArgs as HirGenericArgs},
     hir::{ExprId, generics::GenericParamDataRef},
     type_ref::TypeRefId,
@@ -575,9 +575,7 @@ impl<'a, 'b, 'db> ConfirmContext<'a, 'b, 'db> {
 
     fn check_for_illegal_method_calls(&self) {
         // Disallow calls to the method `drop` defined in the `Drop` trait.
-        if let ItemContainerId::TraitId(trait_def_id) = self.candidate.loc(self.db()).container
-            && self.ctx.lang_items.Drop.is_some_and(|drop_trait| drop_trait == trait_def_id)
-        {
+        if self.ctx.lang_items.Drop_drop.is_some_and(|drop_fn| drop_fn == self.candidate) {
             // FIXME: Report an error.
         }
     }

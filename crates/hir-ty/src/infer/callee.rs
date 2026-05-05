@@ -2,7 +2,6 @@
 
 use std::iter;
 
-use intern::sym;
 use tracing::debug;
 
 use hir_def::{CallableDefId, ConstParamId, hir::ExprId, signatures::FunctionSignature};
@@ -277,27 +276,28 @@ impl<'db> InferenceContext<'_, 'db> {
 
         let call_trait_choices = if self.shallow_resolve(adjusted_ty).is_coroutine_closure() {
             [
-                (self.lang_items.AsyncFn, sym::async_call, true),
-                (self.lang_items.AsyncFnMut, sym::async_call_mut, true),
-                (self.lang_items.AsyncFnOnce, sym::async_call_once, false),
-                (self.lang_items.Fn, sym::call, true),
-                (self.lang_items.FnMut, sym::call_mut, true),
-                (self.lang_items.FnOnce, sym::call_once, false),
+                (self.lang_items.AsyncFn, self.lang_items.AsyncFn_async_call, true),
+                (self.lang_items.AsyncFnMut, self.lang_items.AsyncFnMut_async_call_mut, true),
+                (self.lang_items.AsyncFnOnce, self.lang_items.AsyncFnOnce_async_call_once, false),
+                (self.lang_items.Fn, self.lang_items.Fn_call, true),
+                (self.lang_items.FnMut, self.lang_items.FnMut_call_mut, true),
+                (self.lang_items.FnOnce, self.lang_items.FnOnce_call_once, false),
             ]
         } else {
             [
-                (self.lang_items.Fn, sym::call, true),
-                (self.lang_items.FnMut, sym::call_mut, true),
-                (self.lang_items.FnOnce, sym::call_once, false),
-                (self.lang_items.AsyncFn, sym::async_call, true),
-                (self.lang_items.AsyncFnMut, sym::async_call_mut, true),
-                (self.lang_items.AsyncFnOnce, sym::async_call_once, false),
+                (self.lang_items.Fn, self.lang_items.Fn_call, true),
+                (self.lang_items.FnMut, self.lang_items.FnMut_call_mut, true),
+                (self.lang_items.FnOnce, self.lang_items.FnOnce_call_once, false),
+                (self.lang_items.AsyncFn, self.lang_items.AsyncFn_async_call, true),
+                (self.lang_items.AsyncFnMut, self.lang_items.AsyncFnMut_async_call_mut, true),
+                (self.lang_items.AsyncFnOnce, self.lang_items.AsyncFnOnce_async_call_once, false),
             ]
         };
 
         // Try the options that are least restrictive on the caller first.
-        for (opt_trait_def_id, method_name, borrow) in call_trait_choices {
-            let Some(trait_def_id) = opt_trait_def_id else {
+        for (opt_trait_def_id, opt_method_def_id, borrow) in call_trait_choices {
+            let (Some(trait_def_id), Some(method_def_id)) = (opt_trait_def_id, opt_method_def_id)
+            else {
                 continue;
             };
 
@@ -316,8 +316,8 @@ impl<'db> InferenceContext<'_, 'db> {
             // `Box<impl FnOnce()>: Fn` is considered ambiguous and chosen.
             if let Some(ok) = self.table.lookup_method_for_operator(
                 ObligationCause::new(call_expr),
-                method_name,
                 trait_def_id,
+                method_def_id,
                 adjusted_ty,
                 opt_input_type,
                 TreatNotYetDefinedOpaques::AsRigid,

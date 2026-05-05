@@ -5699,21 +5699,15 @@ impl<'db> Type<'db> {
     /// This function is used in `.await` syntax completion.
     pub fn into_future_output(&self, db: &'db dyn HirDatabase) -> Option<Type<'db>> {
         let lang_items = hir_def::lang_item::lang_items(db, self.env.krate);
-        let trait_ = lang_items
-            .IntoFutureIntoFuture
-            .and_then(|into_future_fn| {
-                let assoc_item = as_assoc_item(db, AssocItem::Function, into_future_fn)?;
-                let into_future_trait = assoc_item.container_or_implemented_trait(db)?;
-                Some(into_future_trait.id)
-            })
-            .or(lang_items.Future)?;
+        let (trait_, output_assoc_type) = lang_items
+            .IntoFuture
+            .zip(lang_items.IntoFutureOutput)
+            .or(lang_items.Future.zip(lang_items.FutureOutput))?;
 
         if !traits::implements_trait_unique(self.ty, db, self.env, trait_) {
             return None;
         }
 
-        let output_assoc_type =
-            trait_.trait_items(db).associated_type_by_name(&Name::new_symbol_root(sym::Output))?;
         self.normalize_trait_assoc_type(db, &[], output_assoc_type.into())
     }
 
@@ -5727,10 +5721,7 @@ impl<'db> Type<'db> {
     /// This does **not** resolve `IntoIterator`, only `Iterator`.
     pub fn iterator_item(self, db: &'db dyn HirDatabase) -> Option<Type<'db>> {
         let lang_items = hir_def::lang_item::lang_items(db, self.env.krate);
-        let iterator_trait = lang_items.Iterator?;
-        let iterator_item = iterator_trait
-            .trait_items(db)
-            .associated_type_by_name(&Name::new_symbol_root(sym::Item))?;
+        let iterator_item = lang_items.IteratorItem?;
         self.normalize_trait_assoc_type(db, &[], iterator_item.into())
     }
 
@@ -5745,19 +5736,13 @@ impl<'db> Type<'db> {
     /// Resolves the projection `<Self as IntoIterator>::IntoIter` and returns the resulting type
     pub fn into_iterator_iter(self, db: &'db dyn HirDatabase) -> Option<Type<'db>> {
         let lang_items = hir_def::lang_item::lang_items(db, self.env.krate);
-        let trait_ = lang_items.IntoIterIntoIter.and_then(|into_iter_fn| {
-            let assoc_item = as_assoc_item(db, AssocItem::Function, into_iter_fn)?;
-            let into_iter_trait = assoc_item.container_or_implemented_trait(db)?;
-            Some(into_iter_trait.id)
-        })?;
+        let trait_ = lang_items.IntoIterator?;
 
         if !traits::implements_trait_unique(self.ty, db, self.env, trait_) {
             return None;
         }
 
-        let into_iter_assoc_type = trait_
-            .trait_items(db)
-            .associated_type_by_name(&Name::new_symbol_root(sym::IntoIter))?;
+        let into_iter_assoc_type = lang_items.IntoIterIntoIterType?;
         self.normalize_trait_assoc_type(db, &[], into_iter_assoc_type.into())
     }
 
