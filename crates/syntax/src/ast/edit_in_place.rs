@@ -2,15 +2,15 @@
 
 use std::iter::{empty, once, successors};
 
-use parser::{SyntaxKind, T};
+use parser::T;
 
 use crate::{
-    AstNode, AstToken, Direction, SyntaxElement,
+    AstNode, AstToken, Direction,
     SyntaxKind::{ATTR, COMMENT, WHITESPACE},
-    SyntaxNode, SyntaxToken,
+    SyntaxNode,
     algo::{self, neighbor},
     ast::{self, edit::IndentLevel, make, syntax_factory::SyntaxFactory},
-    syntax_editor::{self, SyntaxEditor},
+    syntax_editor::SyntaxEditor,
     ted,
 };
 
@@ -270,75 +270,6 @@ impl ast::Impl {
     }
 }
 
-impl ast::AssocItemList {
-    /// Adds a new associated item after all of the existing associated items.
-    ///
-    /// Attention! This function does align the first line of `item` with respect to `self`,
-    /// but it does _not_ change indentation of other lines (if any).
-    pub fn add_item(&self, editor: &SyntaxEditor, item: ast::AssocItem) {
-        let make = editor.make();
-        let (indent, position, whitespace) = match self.assoc_items().last() {
-            Some(last_item) => (
-                IndentLevel::from_node(last_item.syntax()),
-                syntax_editor::Position::after(last_item.syntax()),
-                "\n\n",
-            ),
-            None => match self.l_curly_token() {
-                Some(l_curly) => {
-                    normalize_ws_between_braces_with_editor(editor, self.syntax());
-                    (
-                        IndentLevel::from_token(&l_curly) + 1,
-                        syntax_editor::Position::after(&l_curly),
-                        "\n",
-                    )
-                }
-                None => (
-                    IndentLevel::zero(),
-                    syntax_editor::Position::last_child_of(self.syntax()),
-                    "\n",
-                ),
-            },
-        };
-        let elements: Vec<SyntaxElement> = vec![
-            make.whitespace(&format!("{whitespace}{indent}")).into(),
-            item.syntax().clone().into(),
-        ];
-        editor.insert_all(position, elements);
-    }
-}
-
-impl ast::RecordExprFieldList {
-    pub fn add_field(&self, field: ast::RecordExprField) {
-        let is_multiline = self.syntax().text().contains_char('\n');
-        let whitespace = if is_multiline {
-            let indent = IndentLevel::from_node(self.syntax()) + 1;
-            make::tokens::whitespace(&format!("\n{indent}"))
-        } else {
-            make::tokens::single_space()
-        };
-
-        if is_multiline {
-            normalize_ws_between_braces(self.syntax());
-        }
-
-        let position = match self.fields().last() {
-            Some(last_field) => {
-                let comma = get_or_insert_comma_after(last_field.syntax());
-                ted::Position::after(comma)
-            }
-            None => match self.l_curly_token() {
-                Some(it) => ted::Position::after(it),
-                None => ted::Position::last_child_of(self.syntax()),
-            },
-        };
-
-        ted::insert_all(position, vec![whitespace.into(), field.syntax().clone().into()]);
-        if is_multiline {
-            ted::insert(ted::Position::after(field.syntax()), ast::make::token(T![,]));
-        }
-    }
-}
-
 impl ast::RecordExprField {
     /// This will either replace the initializer, or in the case that this is a shorthand convert
     /// the initializer into the name ref and insert the expr as the new initializer.
@@ -358,110 +289,6 @@ impl ast::RecordExprField {
             editor.replace(self.syntax(), new_field.syntax());
         }
     }
-}
-
-impl ast::RecordPatFieldList {
-    pub fn add_field(&self, field: ast::RecordPatField) {
-        let is_multiline = self.syntax().text().contains_char('\n');
-        let whitespace = if is_multiline {
-            let indent = IndentLevel::from_node(self.syntax()) + 1;
-            make::tokens::whitespace(&format!("\n{indent}"))
-        } else {
-            make::tokens::single_space()
-        };
-
-        if is_multiline {
-            normalize_ws_between_braces(self.syntax());
-        }
-
-        let position = match self.fields().last() {
-            Some(last_field) => {
-                let syntax = last_field.syntax();
-                let comma = get_or_insert_comma_after(syntax);
-                ted::Position::after(comma)
-            }
-            None => match self.l_curly_token() {
-                Some(it) => ted::Position::after(it),
-                None => ted::Position::last_child_of(self.syntax()),
-            },
-        };
-
-        ted::insert_all(position, vec![whitespace.into(), field.syntax().clone().into()]);
-        if is_multiline {
-            ted::insert(ted::Position::after(field.syntax()), ast::make::token(T![,]));
-        }
-    }
-}
-
-fn get_or_insert_comma_after(syntax: &SyntaxNode) -> SyntaxToken {
-    match syntax
-        .siblings_with_tokens(Direction::Next)
-        .filter_map(|it| it.into_token())
-        .find(|it| it.kind() == T![,])
-    {
-        Some(it) => it,
-        None => {
-            let comma = ast::make::token(T![,]);
-            ted::insert(ted::Position::after(syntax), &comma);
-            comma
-        }
-    }
-}
-
-fn normalize_ws_between_braces(node: &SyntaxNode) -> Option<()> {
-    let l = node
-        .children_with_tokens()
-        .filter_map(|it| it.into_token())
-        .find(|it| it.kind() == T!['{'])?;
-    let r = node
-        .children_with_tokens()
-        .filter_map(|it| it.into_token())
-        .find(|it| it.kind() == T!['}'])?;
-
-    let indent = IndentLevel::from_node(node);
-
-    match l.next_sibling_or_token() {
-        Some(ws)
-            if ws.kind() == SyntaxKind::WHITESPACE
-                && ws.next_sibling_or_token()?.into_token()? == r =>
-        {
-            ted::replace(ws, make::tokens::whitespace(&format!("\n{indent}")));
-        }
-        Some(ws) if ws.kind() == T!['}'] => {
-            ted::insert(ted::Position::after(l), make::tokens::whitespace(&format!("\n{indent}")));
-        }
-        _ => (),
-    }
-    Some(())
-}
-
-fn normalize_ws_between_braces_with_editor(editor: &SyntaxEditor, node: &SyntaxNode) -> Option<()> {
-    let make = editor.make();
-    let l = node
-        .children_with_tokens()
-        .filter_map(|it| it.into_token())
-        .find(|it| it.kind() == T!['{'])?;
-    let r = node
-        .children_with_tokens()
-        .filter_map(|it| it.into_token())
-        .find(|it| it.kind() == T!['}'])?;
-
-    let indent = IndentLevel::from_node(node);
-
-    match l.next_sibling_or_token() {
-        Some(ws)
-            if ws.kind() == SyntaxKind::WHITESPACE
-                && ws.next_sibling_or_token()?.into_token()? == r =>
-        {
-            editor.replace(ws, make.whitespace(&format!("\n{indent}")));
-        }
-        Some(ws) if ws.kind() == T!['}'] => {
-            editor
-                .insert(syntax_editor::Position::after(l), make.whitespace(&format!("\n{indent}")));
-        }
-        _ => (),
-    }
-    Some(())
 }
 
 pub trait Indent: AstNode + Clone + Sized {

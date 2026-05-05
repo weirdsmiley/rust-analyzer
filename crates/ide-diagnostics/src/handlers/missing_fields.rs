@@ -18,6 +18,7 @@ use stdx::format_to;
 use syntax::{
     AstNode, Edition, SyntaxNode, SyntaxNodePtr, ToSmolStr,
     ast::{self, make},
+    syntax_editor::SyntaxEditor,
 };
 
 use crate::{Diagnostic, DiagnosticCode, DiagnosticsContext, fix};
@@ -115,16 +116,20 @@ fn fixes(ctx: &DiagnosticsContext<'_, '_>, d: &hir::MissingFields) -> Option<Vec
                 }
             });
 
+            let old_field_list = field_list_parent.record_expr_field_list()?;
+            let root = old_field_list.syntax().ancestors().last()?;
+            let (editor, _) = SyntaxEditor::new(root);
+            let make = editor.make();
+
             let generate_fill_expr = |ty: &Type<'_>| match ctx.config.expr_fill_default {
-                ExprFillDefaultMode::Todo => make::ext::expr_todo(),
-                ExprFillDefaultMode::Underscore => make::ext::expr_underscore(),
+                ExprFillDefaultMode::Todo => make.expr_todo(),
+                ExprFillDefaultMode::Underscore => make.expr_underscore().into(),
                 ExprFillDefaultMode::Default => {
-                    get_default_constructor(ctx, d, ty).unwrap_or_else(make::ext::expr_todo)
+                    get_default_constructor(ctx, d, ty).unwrap_or_else(|| make.expr_todo())
                 }
             };
 
-            let old_field_list = field_list_parent.record_expr_field_list()?;
-            let new_field_list = old_field_list.clone_for_update();
+            let mut new_fields = Vec::new();
             for (f, ty) in missing_fields.iter() {
                 let field_expr = if let Some(local_candidate) = locals.get(&f.name(ctx.sema.db)) {
                     cov_mark::hit!(field_shorthand);
@@ -159,31 +164,39 @@ fn fixes(ctx: &DiagnosticsContext<'_, '_>, d: &hir::MissingFields) -> Option<Vec
 
                     if expr.is_some() { expr } else { Some(generate_fill_expr(ty)) }
                 };
-                let field = make::record_expr_field(
-                    make::name_ref(&f.name(ctx.sema.db).display_no_db(ctx.edition).to_smolstr()),
+                let field = make.record_expr_field(
+                    make.name_ref(&f.name(ctx.sema.db).display_no_db(ctx.edition).to_smolstr()),
                     field_expr,
                 );
-                new_field_list.add_field(field.clone_for_update());
+                new_fields.push(field);
             }
-            build_text_edit(new_field_list.syntax(), old_field_list.syntax())
+            old_field_list.add_fields(&editor, new_fields);
+            let new_field_list = editor.finish().find_element(old_field_list.syntax())?;
+            build_text_edit(&new_field_list, old_field_list.syntax())
         }
         Either::Right(field_list_parent) => {
             let missing_fields = ctx.sema.record_pattern_missing_fields(field_list_parent);
 
             let old_field_list = field_list_parent.record_pat_field_list()?;
-            let new_field_list = old_field_list.clone_for_update();
+            let root = old_field_list.syntax().ancestors().last()?;
+            let (editor, _) = SyntaxEditor::new(root);
+            let make = editor.make();
+
+            let mut new_fields = Vec::new();
             for (f, _) in missing_fields.iter() {
-                let field = make::record_pat_field_shorthand(
-                    make::ident_pat(
+                let field = make.record_pat_field_shorthand(
+                    make.ident_pat(
                         false,
                         false,
-                        make::name(&f.name(ctx.sema.db).display_no_db(ctx.edition).to_smolstr()),
+                        make.name(&f.name(ctx.sema.db).display_no_db(ctx.edition).to_smolstr()),
                     )
                     .into(),
                 );
-                new_field_list.add_field(field.clone_for_update());
+                new_fields.push(field);
             }
-            build_text_edit(new_field_list.syntax(), old_field_list.syntax())
+            old_field_list.add_fields(&editor, new_fields);
+            let new_field_list = editor.finish().find_element(old_field_list.syntax())?;
+            build_text_edit(&new_field_list, old_field_list.syntax())
         }
     }
 }
