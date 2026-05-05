@@ -1031,6 +1031,11 @@ impl Printer<'_> {
                 w!(self, "box ");
                 self.print_pat(*inner);
             }
+            Pat::Deref { inner } => {
+                w!(self, "deref!(");
+                self.print_pat(*inner);
+                w!(self, ")");
+            }
             Pat::ConstBlock(c) => {
                 w!(self, "const ");
                 self.print_expr(*c);

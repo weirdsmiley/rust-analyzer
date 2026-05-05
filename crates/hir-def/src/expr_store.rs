@@ -587,7 +587,7 @@ impl ExpressionStore {
             Pat::Record { args, ellipsis: _, path: _ } => {
                 args.iter().for_each(|RecordFieldPat { pat, name: _ }| f(*pat));
             }
-            Pat::Box { inner } => f(*inner),
+            Pat::Box { inner } | Pat::Deref { inner } => f(*inner),
         }
     }
 
@@ -803,7 +803,8 @@ impl ExpressionStore {
             | Pat::Bind { .. }
             | Pat::TupleStruct { .. }
             | Pat::Ref { .. }
-            | Pat::Box { .. } => {}
+            | Pat::Box { .. }
+            | Pat::Deref { .. } => {}
         });
     }
 

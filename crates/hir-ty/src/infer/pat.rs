@@ -517,6 +517,7 @@ impl<'a, 'db> InferenceContext<'a, 'db> {
                 self.infer_tuple_pat(pat, elements, ddpos, expected, pat_info)
             }
             Pat::Box { inner } => self.infer_box_pat(pat, inner, expected, pat_info),
+            Pat::Deref { inner } => self.infer_deref_pat(pat, inner, expected, pat_info),
             // Pat::Deref(inner) => self.infer_deref_pat(pat.span, inner, expected, pat_info),
             Pat::Ref { pat: inner, mutability: mutbl } => self.infer_ref_pat(
                 pat,
@@ -616,7 +617,7 @@ impl<'a, 'db> InferenceContext<'a, 'db> {
             // When checking an explicit deref pattern, only peel reference types.
             // FIXME(deref_patterns): If box patterns and deref patterns need to coexist, box
             // patterns may want `PeelKind::Implicit`, stopping on encountering a box.
-            Pat::Box { .. } /*  | Pat::Deref(_) */ => {
+            Pat::Box { .. } | Pat::Deref { .. } => {
                 AdjustMode::Peel { kind: PeelKind::ExplicitDerefPat }
             }
             // A never pattern behaves somewhat like a literal or unit variant.
@@ -1270,7 +1271,7 @@ https://doc.rust-lang.org/reference/types.html#trait-objects";
         box_ty
     }
 
-    fn _infer_deref_pat(
+    fn infer_deref_pat(
         &mut self,
         pat: PatId,
         inner: PatId,
@@ -1332,7 +1333,7 @@ https://doc.rust-lang.org/reference/types.html#trait-objects";
     /// This is computed from the typeck results since we want to make
     /// sure to apply any match-ergonomics adjustments, which we cannot
     /// determine from the HIR alone.
-    fn pat_has_ref_mut_binding(&self, pat: PatId) -> bool {
+    pub(super) fn pat_has_ref_mut_binding(&self, pat: PatId) -> bool {
         let mut has_ref_mut = false;
         self.store.walk_pats(pat, &mut |pat| {
             if let Some(BindingMode(ByRef::Yes(Mutability::Mut), _)) =

@@ -1205,6 +1205,12 @@ impl InferenceResult {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+enum DerefPatBorrowMode {
+    Borrow(Mutability),
+    Box,
+}
+
 /// The inference context contains all information needed during type inference.
 #[derive(Clone, Debug)]
 pub(crate) struct InferenceContext<'body, 'db> {
@@ -1365,6 +1371,22 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
             (target_features, target_feature_is_safe)
         });
         (target_features, *target_feature_is_safe)
+    }
+
+    /// How should a deref pattern find the place for its inner pattern to match on?
+    ///
+    /// In most cases, if the pattern recursively contains a `ref mut` binding, we find the inner
+    /// pattern's scrutinee by calling `DerefMut::deref_mut`, and otherwise we call `Deref::deref`.
+    /// However, for boxes we can use a built-in deref instead, which doesn't borrow the scrutinee;
+    /// in this case, we return `DerefPatBorrowMode::Box`.
+    fn deref_pat_borrow_mode(&self, pointer_ty: Ty<'_>, inner: PatId) -> DerefPatBorrowMode {
+        if pointer_ty.is_box() {
+            DerefPatBorrowMode::Box
+        } else {
+            let mutability =
+                if self.pat_has_ref_mut_binding(inner) { Mutability::Mut } else { Mutability::Not };
+            DerefPatBorrowMode::Borrow(mutability)
+        }
     }
 
     #[inline]

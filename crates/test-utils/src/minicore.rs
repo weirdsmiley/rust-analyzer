@@ -28,6 +28,7 @@
 //!     default: sized
 //!     deref_mut: deref
 //!     deref: sized
+//!     deref_pat: deref
 //!     derive:
 //!     discriminant:
 //!     drop: sized
@@ -617,6 +618,15 @@ pub mod ops {
         }
         // endregion:deref_mut
 
+        // region:deref_pat
+        #[lang = "deref_pure"]
+        #[rustc_dyn_incompatible_trait]
+        pub unsafe trait DerefPure: PointeeSized {}
+
+        unsafe impl<T: ?Sized> DerefPure for &T {}
+        unsafe impl<T: ?Sized> DerefPure for &mut T {}
+        // endregion:deref_pat
+
         // region:receiver
         #[lang = "receiver"]
         pub trait Receiver: PointeeSized {
@@ -634,8 +644,9 @@ pub mod ops {
     }
     pub use self::deref::{
         Deref,
-        DerefMut, // :deref_mut
-        Receiver, // :receiver
+        DerefMut,  // :deref_mut
+        DerefPure, // :deref_pat
+        Receiver,  // :receiver
     };
     // endregion:deref
 
@@ -2258,6 +2269,13 @@ mod macros {
     #[macro_export]
     macro_rules! option_env {}
     // endregion:env
+
+    // region:deref_pat
+    #[allow_internal_unstable(builtin_syntax)]
+    pub macro deref($pat:pat) {
+        builtin # deref($pat)
+    }
+    // endregion:deref_pat
 }
 
 // region:non_zero
@@ -2387,6 +2405,7 @@ pub mod prelude {
             panic,                                        // :panic
             result::Result::{self, Err, Ok},              // :result
             str::FromStr,                                 // :str
+            macros::deref,                                // :deref_pat
         };
     }
 

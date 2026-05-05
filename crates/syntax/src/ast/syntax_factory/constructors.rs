@@ -915,6 +915,10 @@ impl SyntaxFactory {
         ast
     }
 
+    pub fn deref_pat(&self, pat: ast::Pat) -> ast::Pat {
+        make::deref_pat(pat.clone()).clone_for_update()
+    }
+
     pub fn paren_pat(&self, pat: ast::Pat) -> ast::ParenPat {
         let ast = make::paren_pat(pat.clone()).clone_for_update();
 

@@ -501,6 +501,10 @@ impl<'db> Ty<'db> {
         }
     }
 
+    pub fn is_box(self) -> bool {
+        matches!(self.kind(), TyKind::Adt(adt_def, _) if adt_def.is_box())
+    }
+
     #[inline]
     pub fn as_adt(self) -> Option<(AdtId, GenericArgs<'db>)> {
         match self.kind() {

@@ -17,13 +17,15 @@ use hir_def::{
 use macros::{TypeFoldable, TypeVisitable};
 use rustc_type_ir::inherent::{IntoKind, Ty as _};
 use smallvec::{SmallVec, smallvec};
+use stdx::impl_from;
 use syntax::ast::{BinaryOp, UnaryOp};
 use tracing::{debug, instrument, trace};
 
 use crate::{
     Adjust, Adjustment, AutoBorrow, Span,
     infer::{
-        ByRef, CaptureSourceStack, InferenceContext, UpvarCapture, closure::analysis::BorrowKind,
+        ByRef, CaptureSourceStack, DerefPatBorrowMode, InferenceContext, PatAdjust, PatAdjustment,
+        UpvarCapture, closure::analysis::BorrowKind,
     },
     method_resolution::CandidateId,
     next_solver::{ErrorGuaranteed, StoredTy, Ty, TyKind},
@@ -795,6 +797,11 @@ impl<'a, 'b, 'db, D: Delegate<'db>> ExprUseVisitor<'a, 'b, 'db, D> {
         self.cx.result.expr_adjustment(expr).unwrap_or_default().into()
     }
 
+    fn pat_adjustments(&self, pat: PatId) -> SmallVec<[PatAdjustment; 5]> {
+        // Due to borrowck problems, we cannot borrow the adjustments, unfortunately.
+        self.cx.result.pat_adjustment(pat).unwrap_or_default().into()
+    }
+
     /// Invoke the appropriate delegate calls for anything that gets
     /// consumed or borrowed as part of the automatic adjustment
     /// process.
@@ -877,6 +884,31 @@ impl<'a, 'b, 'db, D: Delegate<'db>> ExprUseVisitor<'a, 'b, 'db, D> {
     #[instrument(skip(self), level = "debug")]
     fn walk_pat(&mut self, discr_place: PlaceWithOrigin, pat: PatId, has_guard: bool) -> Result {
         self.cat_pattern(discr_place.clone(), pat, &mut |this, place, pat| {
+            let walk_deref_pat = |this: &mut Self, subpattern: PatId, place: PlaceWithOrigin| {
+                // A deref pattern is a bit special: the binding mode of its inner bindings
+                // determines whether to borrow *at the level of the deref pattern* rather than
+                // borrowing the bound place (since that inner place is inside the temporary that
+                // stores the result of calling `deref()`/`deref_mut()` so can't be captured).
+                // Deref patterns on boxes don't borrow, so we ignore them here.
+                // HACK: this could be a fake pattern corresponding to a deref inserted by match
+                // ergonomics, in which case `pat.hir_id` will be the id of the subpattern.
+                if let DerefPatBorrowMode::Borrow(mutability) =
+                    this.cx.deref_pat_borrow_mode(place.place.ty(), subpattern)
+                {
+                    let bk = BorrowKind::from_mutbl(mutability);
+                    this.delegate.borrow(place, bk, this.cx);
+                }
+            };
+
+            let pat = match pat {
+                CatPatternPat::PatId(pat) => pat,
+                CatPatternPat::DerefPat { inner } => {
+                    debug!("walk_pat: Deref {{ inner: {:?} }}", inner);
+                    walk_deref_pat(this, inner, place);
+                    return Ok(());
+                }
+            };
+
             debug!("walk_pat: pat.kind={:?}", this.cx.store[pat]);
             let read_discriminant = {
                 let place = place.clone();
@@ -921,6 +953,7 @@ impl<'a, 'b, 'db, D: Delegate<'db>> ExprUseVisitor<'a, 'b, 'db, D> {
                         }
                     }
                 }
+                Pat::Deref { inner: subpattern } => walk_deref_pat(this, subpattern, place),
                 Pat::Path(ref path) => {
                     // A `Path` pattern is just a name like `Foo`. This is either a
                     // named constant or else it refers to an ADT variant
@@ -1109,6 +1142,13 @@ impl<'a, 'b, 'db, D: Delegate<'db>> ExprUseVisitor<'a, 'b, 'db, D> {
         if ty.is_ty_error() { Err(ErrorGuaranteed) } else { Ok(()) }
     }
 }
+
+#[derive(Debug, Clone, Copy)]
+enum CatPatternPat {
+    PatId(PatId),
+    DerefPat { inner: PatId },
+}
+impl_from!(PatId for CatPatternPat);
 
 /// The job of the methods whose name starts with `cat_` is to analyze
 /// expressions and construct the corresponding [`Place`]s. The `cat`
@@ -1460,7 +1500,7 @@ impl<'db, D: Delegate<'db>> ExprUseVisitor<'_, '_, 'db, D> {
         op: &mut F,
     ) -> Result
     where
-        F: FnMut(&mut Self, PlaceWithOrigin, PatId) -> Result,
+        F: FnMut(&mut Self, PlaceWithOrigin, CatPatternPat) -> Result,
     {
         // If (pattern) adjustments are active for this pattern, adjust the `PlaceWithId` correspondingly.
         // `PlaceWithId`s are constructed differently from patterns. For example, in
@@ -1494,11 +1534,26 @@ impl<'db, D: Delegate<'db>> ExprUseVisitor<'_, '_, 'db, D> {
         // Then we see that to get the same result, we must start with
         // `deref { deref { place_foo }}` instead of `place_foo` since the pattern is now `Some(x,)`
         // and not `&&Some(x,)`, even though its assigned type is that of `&&Some(x,)`.
-        let adjustments_len = self.cx.result.pat_adjustment(pat).map_or(0, |it| it.len());
-        for _ in 0..adjustments_len {
+        let adjustments = self.pat_adjustments(pat);
+        let mut adjusts = adjustments.iter().peekable();
+        while let Some(adjust) = adjusts.next() {
             debug!("applying adjustment to place_with_id={:?}", place_with_id);
-            // FIXME: We need to adjust this once we implement deref patterns (or pin ergonomics, for that matter).
-            place_with_id = self.cat_deref(pat.into(), place_with_id)?;
+            place_with_id = match adjust.kind {
+                PatAdjust::BuiltinDeref => self.cat_deref(pat.into(), place_with_id)?,
+                PatAdjust::OverloadedDeref => {
+                    // This adjustment corresponds to an overloaded deref; unless it's on a box, it
+                    // borrows the scrutinee to call `Deref::deref` or `DerefMut::deref_mut`. Invoke
+                    // the callback before setting `place_with_id` to the temporary storing the
+                    // result of the deref.
+                    op(self, place_with_id.clone(), CatPatternPat::DerefPat { inner: pat })?;
+                    let target_ty = match adjusts.peek() {
+                        Some(next_adjust) => next_adjust.source.as_ref(),
+                        // At the end of the deref chain, we get `pat`'s scrutinee.
+                        None => self.pat_ty_unadjusted(pat)?,
+                    };
+                    self.pat_deref_place(pat.into(), place_with_id, pat, target_ty)?
+                }
+            };
         }
         let place_with_id = place_with_id; // lose mutability
         debug!("applied adjustment derefs to get place_with_id={:?}", place_with_id);
@@ -1512,7 +1567,7 @@ impl<'db, D: Delegate<'db>> ExprUseVisitor<'_, '_, 'db, D> {
         // `Some(x)` (which matches). Recursing once more, `*&Some(3)` and the pattern `Some(x)`
         // result in the place `Downcast<Some>(*&Some(3)).0` associated to `x` and invoke `op` with
         // that (where the `ref` on `x` is implied).
-        op(self, place_with_id.clone(), pat)?;
+        op(self, place_with_id.clone(), pat.into())?;
 
         match self.cx.store[pat] {
             Pat::Tuple { args: ref subpats, ellipsis: dots_pos } => {
@@ -1592,6 +1647,11 @@ impl<'db, D: Delegate<'db>> ExprUseVisitor<'_, '_, 'db, D> {
                 let subplace = self.cat_deref(pat.into(), place_with_id)?;
                 self.cat_pattern(subplace, subpat, op)?;
             }
+            Pat::Deref { inner: subpat } => {
+                let ty = self.pat_ty_adjusted(subpat)?;
+                let place = self.pat_deref_place(pat.into(), place_with_id, subpat, ty)?;
+                self.cat_pattern(place, subpat, op)?;
+            }
 
             Pat::Slice { prefix: ref before, slice, suffix: ref after } => {
                 let Some(element_ty) = self
@@ -1640,6 +1700,29 @@ impl<'db, D: Delegate<'db>> ExprUseVisitor<'_, '_, 'db, D> {
         }
 
         Ok(())
+    }
+
+    /// Represents the place matched on by a deref pattern's interior.
+    fn pat_deref_place(
+        &mut self,
+        node: ExprOrPatId,
+        base_place: PlaceWithOrigin,
+        inner: PatId,
+        target_ty: Ty<'db>,
+    ) -> Result<PlaceWithOrigin> {
+        match self.cx.deref_pat_borrow_mode(base_place.place.ty(), inner) {
+            // Deref patterns on boxes are lowered using a built-in deref.
+            DerefPatBorrowMode::Box => self.cat_deref(node, base_place),
+            // For other types, we create a temporary to match on.
+            DerefPatBorrowMode::Borrow(mutability) => {
+                let re_erased = self.cx.types.regions.erased;
+                let ty = Ty::new_ref(self.cx.interner(), re_erased, target_ty, mutability);
+                // A deref pattern stores the result of `Deref::deref` or `DerefMut::deref_mut` ...
+                let base = self.cat_rvalue(node, ty);
+                // ... and the inner pattern matches on the place behind that reference.
+                self.cat_deref(node, base)
+            }
+        }
     }
 
     /// Checks whether a type has multiple variants, and therefore, whether a

@@ -253,6 +253,7 @@ impl<'db> UnsafeVisitor<'db> {
                 | Pat::TupleStruct { .. }
                 | Pat::Ref { .. }
                 | Pat::Box { .. }
+                | Pat::Deref { .. }
                 | Pat::Expr(..)
                 | Pat::ConstBlock(..) => {
                     self.on_unsafe_op(current.into(), UnsafetyReason::UnionField)
