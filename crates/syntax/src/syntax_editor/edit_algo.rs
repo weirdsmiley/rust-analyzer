@@ -111,11 +111,8 @@ pub(super) fn apply_edits(editor: SyntaxEditor) -> SyntaxEdit {
         // Check if this change is dependent on another change (i.e. it's contained within another range)
         if let Some(index) = changed_ancestors
             .iter()
-            .rev()
-            .position(|ancestor| ancestor.affected_range().contains_range(change.target_range()))
+            .rposition(|ancestor| ancestor.affected_range().contains_range(change.target_range()))
         {
-            let index = changed_ancestors.len() - 1 - index;
-
             // Pop off any ancestors that aren't applicable
             changed_ancestors.drain((index + 1)..);
 
