@@ -228,6 +228,25 @@ impl Diagnostic {
         self.unused = unused;
         self
     }
+
+    fn main_node(&self, sema: &Semantics<'_, RootDatabase>) -> Option<InFile<SyntaxNode>> {
+        self.main_node.map(|ptr| ptr.with_value(sema.to_node_syntax(ptr))).or_else(|| {
+            let token = sema
+                .parse_guess_edition(self.range.file_id)
+                .syntax()
+                .token_at_offset(self.range.range.start())
+                .right_biased()?;
+            sema.descend_into_macros(token).into_iter().find_map(|token| {
+                let node = sema.ancestors_with_macros(token.parent().unwrap()).find(|node| {
+                    let original_range = sema.original_range(node);
+                    original_range.file_id.file_id(sema.db) == self.range.file_id
+                        && original_range.range.contains_range(self.range.range)
+                })?;
+                let file = sema.hir_file_for(&node);
+                Some(InFile::new(file, node))
+            })
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -511,14 +530,7 @@ pub fn semantic_diagnostics(
     let mut lints = res
         .iter_mut()
         .filter(|it| matches!(it.code, DiagnosticCode::Clippy(_) | DiagnosticCode::RustcLint(_)))
-        .filter_map(|it| {
-            Some((
-                it.main_node.map(|ptr| {
-                    ptr.map(|node| node.to_node(&ctx.sema.parse_or_expand(ptr.file_id)))
-                })?,
-                it,
-            ))
-        })
+        .filter_map(|it| Some((it.main_node(&ctx.sema)?, it)))
         .collect::<Vec<_>>();
 
     // The edition isn't accurate (each diagnostics may have its own edition due to macros),
