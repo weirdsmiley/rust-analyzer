@@ -165,6 +165,7 @@ pub(super) fn lower_body(
     };
 
     let body_expr = collector.collect(
+        self_param,
         &mut params,
         body,
         if is_async_fn {
@@ -963,6 +964,7 @@ impl<'db> ExprCollector<'db> {
     /// drop order are stable.
     fn lower_coroutine_body_with_moved_arguments(
         &mut self,
+        self_param: Option<BindingId>,
         params: &mut [PatId],
         body: ExprId,
         kind: CoroutineKind,
@@ -995,6 +997,26 @@ impl<'db> ExprCollector<'db> {
         // `let <pattern> = <pattern>;` statement as an optimization.
 
         let mut statements = Vec::new();
+
+        if let Some(self_param) = self_param {
+            let Binding { ref name, mode, hygiene, .. } = self.store.bindings[self_param];
+            let name = name.clone();
+            let child_binding_id = self.alloc_binding(name.clone(), mode, hygiene);
+            let child_pat_id =
+                self.alloc_pat_desugared(Pat::Bind { id: child_binding_id, subpat: None });
+            self.add_definition_to_binding(child_binding_id, child_pat_id);
+            let expr = self.alloc_expr_desugared(Expr::Path(name.into()));
+            if !hygiene.is_root() {
+                self.store.ident_hygiene.insert(expr.into(), hygiene);
+            }
+            statements.push(Statement::Let {
+                pat: child_pat_id,
+                type_ref: None,
+                initializer: Some(expr),
+                else_branch: None,
+            });
+        }
+
         for param in params {
             let (name, hygiene, is_simple_parameter) = match self.store.pats[*param] {
                 // Check if this is a binding pattern, if so, we can optimize and avoid adding a
@@ -1094,6 +1116,7 @@ impl<'db> ExprCollector<'db> {
 
     fn collect(
         &mut self,
+        self_param: Option<BindingId>,
         params: &mut [PatId],
         expr: Option<ast::Expr>,
         awaitable: Awaitable,
@@ -1111,6 +1134,7 @@ impl<'db> ExprCollector<'db> {
                     (false, false) => unreachable!(),
                 };
                 this.lower_coroutine_body_with_moved_arguments(
+                    self_param,
                     params,
                     body,
                     kind,
@@ -1587,6 +1611,7 @@ impl<'db> ExprCollector<'db> {
                         // It's important that this expr is allocated immediately before the closure.
                         // We rely on it for `coroutine_for_closure()`.
                         body = this.lower_coroutine_body_with_moved_arguments(
+                            None,
                             &mut args,
                             body,
                             kind,
