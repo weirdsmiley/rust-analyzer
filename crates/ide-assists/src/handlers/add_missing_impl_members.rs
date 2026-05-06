@@ -2623,4 +2623,22 @@ impl Allocator for System {
 "#,
         );
     }
+
+    #[test]
+    fn does_not_include_defaulted_assoc_types() {
+        check_assist_not_applicable(
+            add_missing_impl_members,
+            r#"
+trait Trait {
+    type NotRequired = ();
+}
+
+struct Struct;
+
+impl Trait for Struct {
+    $0
+}
+        "#,
+        );
+    }
 }
