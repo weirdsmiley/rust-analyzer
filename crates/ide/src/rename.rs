@@ -4079,4 +4079,83 @@ impl<'a, T> Foo<'a, T> {}
 "#,
         );
     }
+
+    #[test]
+    fn test_rename_mut_pattern_with_macro() {
+        check(
+            "new",
+            r#"
+//- minicore: option
+macro_rules! pat_macro {
+    ($pat:pat) => {
+        $pat
+    };
+}
+
+pub fn main() {
+    match None {
+        pat_macro!(Some(mut old$0)) => {
+            old += 1,
+        }
+        None => {}
+    }
+}
+"#,
+            r#"
+macro_rules! pat_macro {
+    ($pat:pat) => {
+        $pat
+    };
+}
+
+pub fn main() {
+    match None {
+        pat_macro!(Some(mut new)) => {
+            new += 1,
+        }
+        None => {}
+    }
+}
+"#,
+        );
+    }
+    #[test]
+    fn test_rename_ref_pattern_with_macro() {
+        check(
+            "new",
+            r#"
+//- minicore: option
+macro_rules! pat_macro {
+    ($pat:pat) => {
+        $pat
+    };
+}
+
+pub fn main() {
+    match None {
+        pat_macro!(Some(ref old$0)) => {
+            old += 1,
+        }
+        None => {}
+    }
+}
+"#,
+            r#"
+macro_rules! pat_macro {
+    ($pat:pat) => {
+        $pat
+    };
+}
+
+pub fn main() {
+    match None {
+        pat_macro!(Some(ref new)) => {
+            new += 1,
+        }
+        None => {}
+    }
+}
+"#,
+        );
+    }
 }
