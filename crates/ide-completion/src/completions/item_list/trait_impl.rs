@@ -38,12 +38,14 @@ use ide_db::{
     syntax_helpers::prettify_macro_expansion, traits::get_missing_assoc_items,
 };
 use syntax::ast::HasGenericParams;
+use syntax::syntax_editor::{Position, SyntaxEditor};
 use syntax::{
     AstNode, SmolStr, SyntaxElement, SyntaxKind, T, TextRange, ToSmolStr,
     ast::{
-        self, HasGenericArgs, HasTypeBounds, edit::AstNodeEdit, edit_in_place::AttrsOwnerEdit, make,
+        self, HasGenericArgs, HasTypeBounds,
+        edit::{AstNodeEdit, AttrsOwnerEdit},
     },
-    format_smolstr, ted,
+    format_smolstr,
 };
 
 use crate::{
@@ -266,20 +268,17 @@ fn get_transformed_assoc_item(
 ) -> Option<ast::AssocItem> {
     let trait_ = impl_def.trait_(ctx.db)?;
     let source_scope = &ctx.sema.scope(assoc_item.syntax())?;
-    let target_scope = &ctx.sema.scope(ctx.sema.source(impl_def)?.syntax().value)?;
-    let transform = PathTransform::trait_impl(
-        target_scope,
-        source_scope,
-        trait_,
-        ctx.sema.source(impl_def)?.value,
-    );
+    let impl_source = ctx.sema.source(impl_def)?;
+    let target_scope = &ctx.sema.scope(impl_source.syntax().value)?;
+    let transform =
+        PathTransform::trait_impl(target_scope, source_scope, trait_, impl_source.value);
 
-    let assoc_item = assoc_item.clone_for_update();
     // FIXME: Paths in nested macros are not handled well. See
     // `macro_generated_assoc_item2` test.
     let assoc_item = ast::AssocItem::cast(transform.apply(assoc_item.syntax()))?;
-    assoc_item.remove_attrs_and_docs();
-    Some(assoc_item)
+    let (editor, assoc_item) = SyntaxEditor::with_ast_node(&assoc_item);
+    assoc_item.remove_attrs_and_docs(&editor);
+    ast::AssocItem::cast(editor.finish().new_root().clone())
 }
 
 /// Transform a relevant associated item to inline generics from the impl, remove attrs and docs, etc.
@@ -291,39 +290,37 @@ fn get_transformed_fn(
 ) -> Option<ast::Fn> {
     let trait_ = impl_def.trait_(ctx.db)?;
     let source_scope = &ctx.sema.scope(fn_.syntax())?;
-    let target_scope = &ctx.sema.scope(ctx.sema.source(impl_def)?.syntax().value)?;
-    let transform = PathTransform::trait_impl(
-        target_scope,
-        source_scope,
-        trait_,
-        ctx.sema.source(impl_def)?.value,
-    );
+    let impl_source = ctx.sema.source(impl_def)?;
+    let target_scope = &ctx.sema.scope(impl_source.syntax().value)?;
+    let transform =
+        PathTransform::trait_impl(target_scope, source_scope, trait_, impl_source.value);
 
     let fn_ = fn_.reset_indent();
     // FIXME: Paths in nested macros are not handled well. See
     // `macro_generated_assoc_item2` test.
     let fn_ = ast::Fn::cast(transform.apply(fn_.syntax()))?;
-    fn_.remove_attrs_and_docs();
+    let (editor, fn_) = SyntaxEditor::with_ast_node(&fn_);
+    let factory = editor.make();
+    fn_.remove_attrs_and_docs(&editor);
     match async_ {
         AsyncSugaring::Desugar => {
             match fn_.ret_type() {
                 Some(ret_ty) => {
                     let ty = ret_ty.ty()?;
-                    ted::replace(
+                    editor.replace(
                         ty.syntax(),
-                        make::ty(&format!("impl Future<Output = {ty}>"))
-                            .syntax()
-                            .clone_for_update(),
+                        factory.ty(&format!("impl Future<Output = {ty}>")).syntax(),
                     );
                 }
-                None => ted::append_child(
-                    fn_.param_list()?.syntax(),
-                    make::ret_type(make::ty("impl Future<Output = ()>"))
-                        .syntax()
-                        .clone_for_update(),
-                ),
+                None => {
+                    let ret_type = factory.ret_type(factory.ty("impl Future<Output = ()>"));
+                    editor.insert_with_whitespace(
+                        Position::after(fn_.param_list()?.syntax()),
+                        ret_type.syntax(),
+                    );
+                }
             }
-            fn_.async_token().unwrap().detach();
+            editor.delete(fn_.async_token()?);
         }
         AsyncSugaring::Resugar => {
             let ty = fn_.ret_type()?.ty()?;
@@ -350,18 +347,21 @@ fn get_transformed_fn(
                     if let ast::Type::TupleType(ty) = &output
                         && ty.fields().next().is_none()
                     {
-                        ted::remove(fn_.ret_type()?.syntax());
+                        editor.delete(fn_.ret_type()?.syntax());
                     } else {
-                        ted::replace(ty.syntax(), output.syntax());
+                        editor.replace(ty.syntax(), output.syntax());
                     }
                 }
                 _ => (),
             }
-            ted::prepend_child(fn_.syntax(), make::token(T![async]));
+            editor.insert_with_whitespace(
+                Position::first_child_of(fn_.syntax()),
+                factory.token(T![async]),
+            );
         }
         AsyncSugaring::Async | AsyncSugaring::Plain => (),
     }
-    Some(fn_)
+    ast::Fn::cast(editor.finish().new_root().clone())
 }
 
 fn add_type_alias_impl(

@@ -10,7 +10,7 @@ use std::{
 
 use crate::{
     AstToken, NodeOrToken, SyntaxElement,
-    SyntaxKind::WHITESPACE,
+    SyntaxKind::{ATTR, COMMENT, WHITESPACE},
     SyntaxNode, SyntaxToken,
     ast::{self, AstNode, HasName, make},
     syntax_editor::{Position, SyntaxEditor, SyntaxMappingBuilder},
@@ -200,6 +200,28 @@ pub trait AstNodeEdit: AstNode + Clone + Sized {
 }
 
 impl<N: AstNode + Clone> AstNodeEdit for N {}
+
+pub trait AttrsOwnerEdit: ast::HasAttrs {
+    fn remove_attrs_and_docs(&self, editor: &SyntaxEditor) {
+        let mut remove_next_ws = false;
+        for child in self.syntax().children_with_tokens() {
+            match child.kind() {
+                ATTR | COMMENT => {
+                    remove_next_ws = true;
+                    editor.delete(child);
+                    continue;
+                }
+                WHITESPACE if remove_next_ws => {
+                    editor.delete(child);
+                }
+                _ => (),
+            }
+            remove_next_ws = false;
+        }
+    }
+}
+
+impl<T: ast::HasAttrs> AttrsOwnerEdit for T {}
 
 impl ast::IdentPat {
     pub fn set_pat(&self, pat: Option<ast::Pat>, editor: &SyntaxEditor) -> ast::IdentPat {
