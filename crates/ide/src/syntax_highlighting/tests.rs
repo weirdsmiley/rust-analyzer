@@ -39,10 +39,18 @@ fn attributes() {
 // This is another normal comment
 #[derive(Copy, Unresolved)]
 // The reason for these being here is to test AttrIds
+#[default]
 enum Foo {
     #[default]
-    Bar
+    Bar {
+        #[default]
+        field: i32
+    }
 }
+
+#[derive(Default)]
+#[default]
+struct Bar(#[default] i32);
 "#,
         expect_file!["./test_data/highlight_attributes.html"],
         false,
