@@ -543,6 +543,10 @@ impl<'db> SemanticsImpl<'db> {
         node
     }
 
+    pub fn to_node_syntax(&self, ptr: InFile<SyntaxNodePtr>) -> SyntaxNode {
+        ptr.value.to_node(&self.parse_or_expand(ptr.file_id))
+    }
+
     pub fn to_node<N: AstNode>(&self, ptr: InFile<AstPtr<N>>) -> N {
         ptr.value.to_node(&self.parse_or_expand(ptr.file_id))
     }
