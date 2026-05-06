@@ -6,8 +6,6 @@ use parser::T;
 
 use crate::{
     AstNode, AstToken, Direction,
-    SyntaxKind::{ATTR, COMMENT, WHITESPACE},
-    SyntaxNode,
     algo::{self, neighbor},
     ast::{self, edit::IndentLevel, make, syntax_factory::SyntaxFactory},
     syntax_editor::SyntaxEditor,
@@ -15,32 +13,6 @@ use crate::{
 };
 
 use super::HasName;
-
-pub trait AttrsOwnerEdit: ast::HasAttrs {
-    fn remove_attrs_and_docs(&self) {
-        remove_attrs_and_docs(self.syntax());
-
-        fn remove_attrs_and_docs(node: &SyntaxNode) {
-            let mut remove_next_ws = false;
-            for child in node.children_with_tokens() {
-                match child.kind() {
-                    ATTR | COMMENT => {
-                        remove_next_ws = true;
-                        child.detach();
-                        continue;
-                    }
-                    WHITESPACE if remove_next_ws => {
-                        child.detach();
-                    }
-                    _ => (),
-                }
-                remove_next_ws = false;
-            }
-        }
-    }
-}
-
-impl<T: ast::HasAttrs> AttrsOwnerEdit for T {}
 
 impl ast::GenericParamList {
     /// Constructs a matching [`ast::GenericArgList`]
