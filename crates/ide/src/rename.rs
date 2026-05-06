@@ -4085,19 +4085,16 @@ impl<'a, T> Foo<'a, T> {}
         check(
             "new",
             r#"
+//- minicore: option
 macro_rules! pat_macro {
     ($pat:pat) => {
         $pat
     };
 }
-enum CustomOption<T> {
-    None,
-    Some(T),
-}
 
 pub fn main() {
-    match CustomOption::None {
-        pat_macro!(CustomOption::Some(mut old$0)) => {
+    match None {
+        pat_macro!(Some(mut old$0)) => {
             old += 1,
         }
         None => {}
@@ -4110,14 +4107,10 @@ macro_rules! pat_macro {
         $pat
     };
 }
-enum CustomOption<T> {
-    None,
-    Some(T),
-}
 
 pub fn main() {
-    match CustomOption::None {
-        pat_macro!(CustomOption::Some(mut new)) => {
+    match None {
+        pat_macro!(Some(mut new)) => {
             new += 1,
         }
         None => {}
@@ -4131,19 +4124,16 @@ pub fn main() {
         check(
             "new",
             r#"
+//- minicore: option
 macro_rules! pat_macro {
     ($pat:pat) => {
         $pat
     };
 }
-enum CustomOption<T> {
-    None,
-    Some(T),
-}
 
 pub fn main() {
-    match CustomOption::None {
-        pat_macro!(CustomOption::Some(ref old$0)) => {
+    match None {
+        pat_macro!(Some(ref old$0)) => {
             old += 1,
         }
         None => {}
@@ -4156,14 +4146,10 @@ macro_rules! pat_macro {
         $pat
     };
 }
-enum CustomOption<T> {
-    None,
-    Some(T),
-}
 
 pub fn main() {
-    match CustomOption::None {
-        pat_macro!(CustomOption::Some(ref new)) => {
+    match None {
+        pat_macro!(Some(ref new)) => {
             new += 1,
         }
         None => {}
