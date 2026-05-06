@@ -1608,7 +1608,6 @@ pub(crate) fn runnable(
                     Some((program, args)) => Some(lsp_ext::Runnable {
                         label,
                         location: Some(location),
-                        kind: lsp_ext::RunnableKind::Shell,
                         args: lsp_ext::RunnableArgs::Shell(lsp_ext::ShellRunnableArgs {
                             environment,
                             cwd: cwd.into(),
@@ -1621,7 +1620,6 @@ pub(crate) fn runnable(
                 None => Some(lsp_ext::Runnable {
                     label,
                     location: Some(location),
-                    kind: lsp_ext::RunnableKind::Cargo,
                     args: lsp_ext::RunnableArgs::Cargo(lsp_ext::CargoRunnableArgs {
                         workspace_root: Some(workspace_root.into()),
                         override_cargo: config.override_cargo,
@@ -1648,7 +1646,6 @@ pub(crate) fn runnable(
                     Ok(Some(lsp_ext::Runnable {
                         label,
                         location: Some(location),
-                        kind: lsp_ext::RunnableKind::Shell,
                         args: lsp_ext::RunnableArgs::Shell(runnable_args),
                     }))
                 }
@@ -1668,7 +1665,6 @@ pub(crate) fn runnable(
             Ok(Some(lsp_ext::Runnable {
                 label,
                 location: Some(location),
-                kind: lsp_ext::RunnableKind::Cargo,
                 args: lsp_ext::RunnableArgs::Cargo(lsp_ext::CargoRunnableArgs {
                     workspace_root: None,
                     override_cargo: config.override_cargo,
