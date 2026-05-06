@@ -1186,21 +1186,15 @@ impl<'db> SourceAnalyzer<'db> {
                 }
 
                 if let Some(attr) = meta_path.parent_attr() {
-                    let adt = if let Some(field) =
-                        attr.syntax().parent().and_then(ast::RecordField::cast)
-                    {
-                        field.syntax().ancestors().take(4).find_map(ast::Adt::cast)
-                    } else if let Some(field) =
-                        attr.syntax().parent().and_then(ast::TupleField::cast)
-                    {
-                        field.syntax().ancestors().take(4).find_map(ast::Adt::cast)
-                    } else if let Some(variant) =
-                        attr.syntax().parent().and_then(ast::Variant::cast)
-                    {
-                        variant.syntax().ancestors().nth(2).and_then(ast::Adt::cast)
-                    } else {
-                        None
-                    };
+                    let adt =
+                        attr.syntax().ancestors().find_map(ast::Item::cast).and_then(
+                            |it| match it {
+                                ast::Item::Struct(it) => Some(ast::Adt::Struct(it)),
+                                ast::Item::Enum(it) => Some(ast::Adt::Enum(it)),
+                                ast::Item::Union(it) => Some(ast::Adt::Union(it)),
+                                _ => None,
+                            },
+                        );
                     if let Some(adt) = adt {
                         let ast_id = db.ast_id_map(self.file_id).ast_id(&adt);
                         if let Some(helpers) = self
