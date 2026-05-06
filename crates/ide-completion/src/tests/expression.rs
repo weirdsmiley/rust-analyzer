@@ -5,8 +5,8 @@ use crate::{
     CompletionConfig,
     config::AutoImportExclusionType,
     tests::{
-        BASE_ITEMS_FIXTURE, TEST_CONFIG, check, check_edit, check_with_base_items,
-        completion_list_with_config,
+        BASE_ITEMS_FIXTURE, TEST_CONFIG, check, check_edit, check_edit_with_config,
+        check_with_base_items, completion_list_with_config,
     },
 };
 
@@ -1146,6 +1146,22 @@ fn break_value_no_block() {
         "break",
         r#"fn f() -> i32 { loop { match () { () => $0 } } }"#,
         r#"fn f() -> i32 { loop { match () { () => break $0 } } }"#,
+    );
+}
+
+#[test]
+fn complete_module_colons() {
+    check_edit(
+        "module",
+        r#"mod module {} fn foo() { $0 }"#,
+        r#"mod module {} fn foo() { module:: }"#,
+    );
+
+    check_edit_with_config(
+        CompletionConfig { add_colons_to_module: false, ..TEST_CONFIG },
+        "module",
+        r#"mod module {} fn foo() { $0 }"#,
+        r#"mod module {} fn foo() { module }"#,
     );
 }
 

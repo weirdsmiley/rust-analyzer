@@ -337,6 +337,7 @@ fn completion_config() -> CompletionConfig<'static> {
         prefer_absolute: false,
         snippets: Vec::new(),
         limit: None,
+        add_colons_to_module: true,
         add_semicolon_to_unit: true,
         fields_to_resolve: CompletionFieldsToResolve::empty(),
         exclude_flyimport: vec![],
