@@ -4126,4 +4126,50 @@ pub fn main() {
 "#,
         );
     }
+    #[test]
+    fn test_rename_ref_pattern_with_macro() {
+        check(
+            "new",
+            r#"
+macro_rules! pat_macro {
+    ($pat:pat) => {
+        $pat
+    };
+}
+enum CustomOption<T> {
+    None,
+    Some(T),
+}
+
+pub fn main() {
+    match CustomOption::None {
+        pat_macro!(CustomOption::Some(ref old$0)) => {
+            old += 1,
+        }
+        None => {}
+    }
+}
+"#,
+            r#"
+macro_rules! pat_macro {
+    ($pat:pat) => {
+        $pat
+    };
+}
+enum CustomOption<T> {
+    None,
+    Some(T),
+}
+
+pub fn main() {
+    match CustomOption::None {
+        pat_macro!(CustomOption::Some(ref new)) => {
+            new += 1,
+        }
+        None => {}
+    }
+}
+"#,
+        );
+    }
 }
