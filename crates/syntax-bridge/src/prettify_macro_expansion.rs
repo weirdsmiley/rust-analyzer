@@ -111,13 +111,29 @@ pub fn prettify_macro_expansion(
                     mods.push(do_nl(after, tok));
                 }
             }
-            T![=] if is_next(|it| it == T![>], false) => {
+            T![=] if let Some((last, next)) = last.zip(tok.next_token()) => {
                 // FIXME: this branch is for `=>` in macro_rules!, which is currently parsed as
                 // two separate symbols.
-                mods.push(do_ws(before, tok));
-                mods.push(do_ws(after, &tok.next_token().unwrap()));
+                match (last, next.kind()) {
+                    (T![=], _) | (_, T![=]) => (),
+                    // catch ..= += etc
+                    #[rustfmt::skip]
+                    (
+                        T![!] | T![%] | T![&] | T![*] | T![+] | T![-] |
+                        T![/] | T![<] | T![>] | T![^] | T![|] | T![.],
+                        _,
+                    ) => (),
+                    (_, T![>]) => {
+                        mods.push(do_ws(before, tok));
+                        mods.push(do_ws(after, &next));
+                    }
+                    _ => {
+                        mods.push(do_ws(before, tok));
+                        mods.push(do_ws(after, tok));
+                    }
+                }
             }
-            T![->] | T![=] | T![=>] => {
+            T![->] | T![=>] => {
                 mods.push(do_ws(before, tok));
                 mods.push(do_ws(after, tok));
             }
@@ -195,13 +211,15 @@ mod tests {
     }
 
     #[test]
-    fn test_colon() {
+    fn test_in_macro() {
         check_pretty(
             r#"
             const X: i32 = x::y::z;
             macro_rules! foo {
                 () => {
-                    $crate::foo::bar!()
+                    $crate::foo::bar!();
+                    (1..2, 1..=2);
+                    (a==b, a!=b, a<=b, a>=b, x+=2, x<<=2);
                 };
             }
             "#,
@@ -209,7 +227,9 @@ mod tests {
                 const X: i32 = x::y::z;
                 macro_rules! foo {
                     () => {
-                        $crate::foo::bar!()
+                        $crate::foo::bar!();
+                        (1..2,1..=2);
+                        (a==b,a!=b,a<=b,a>=b,x+=2,x<<=2);
                     };
                 }
             "#]],
@@ -246,6 +266,7 @@ mod tests {
                 let x = 2;
                 let mut y = 3;
                 let ref mut z @ 0..5 = 4;
+                let ref mut t @ 0..=5 = 4;
                 let (x, ref y) = (5, 6);
                 let (Foo { x, y }, Bar(z, t));
                 let (&mut x, (y | y));
@@ -257,6 +278,7 @@ mod tests {
                     let x = 2;
                     let mut y = 3;
                     let ref mut z@0..5 = 4;
+                    let ref mut t@0..=5 = 4;
                     let (x,ref y) = (5,6);
                     let (Foo {
                         x,y
@@ -349,6 +371,7 @@ mod tests {
                 let _ = async move || {};
                 let _ = async move {};
                 let _ = x.await;
+                let _ = (1..2, 1..=2);
                 'lab: for _ in 0..5 {
                     loop { }
                     break 'lab expr;
@@ -370,6 +393,7 @@ mod tests {
                     let _ = async move||{};
                     let _ = async move {};
                     let _ = x.await;
+                    let _ = (1..2,1..=2);
                     'lab: for _ in 0..5 {
                         loop {}
                         break 'lab expr;
