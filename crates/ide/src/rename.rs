@@ -4079,4 +4079,51 @@ impl<'a, T> Foo<'a, T> {}
 "#,
         );
     }
+
+    #[test]
+    fn test_rename_mut_pattern_with_macro() {
+        check(
+            "new",
+            r#"
+macro_rules! pat_macro {
+    ($pat:pat) => {
+        $pat
+    };
+}
+enum CustomOption<T> {
+    None,
+    Some(T),
+}
+
+pub fn main() {
+    match CustomOption::None {
+        pat_macro!(CustomOption::Some(mut old$0)) => {
+            old += 1,
+        }
+        None => {}
+    }
+}
+"#,
+            r#"
+macro_rules! pat_macro {
+    ($pat:pat) => {
+        $pat
+    };
+}
+enum CustomOption<T> {
+    None,
+    Some(T),
+}
+
+pub fn main() {
+    match CustomOption::None {
+        pat_macro!(CustomOption::Some(mut new)) => {
+            new += 1,
+        }
+        None => {}
+    }
+}
+"#,
+        );
+    }
 }

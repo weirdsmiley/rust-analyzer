@@ -701,28 +701,36 @@ fn source_edit_from_def(
         for source in local.sources(sema.db) {
             let source = match source.source.clone().original_ast_node_rooted(sema.db) {
                 Some(source) => source,
-                None => match source
-                    .source
-                    .syntax()
-                    .original_file_range_opt(sema.db)
-                    .map(TupleExt::head)
-                {
-                    Some(FileRange { file_id: file_id2, range }) => {
-                        file_id = Some(file_id2);
-                        edit.replace(
-                            range,
-                            new_name.display(sema.db, file_id2.edition(sema.db)).to_string(),
-                        );
-                        continue;
+                None => {
+                    match source
+                        .as_ident_pat()
+                        .and_then(|x| x.name())
+                        .and_then(|x| sema.original_range_opt(x.syntax()))
+                        .or_else(|| {
+                            source
+                                .source
+                                .syntax()
+                                .original_file_range_opt(sema.db)
+                                .map(TupleExt::head)
+                        }) {
+                        Some(FileRange { file_id: file_id2, range }) => {
+                            file_id = Some(file_id2);
+                            edit.replace(
+                                range,
+                                new_name.display(sema.db, file_id2.edition(sema.db)).to_string(),
+                            );
+                            continue;
+                        }
+                        None => {
+                            bail!("Can't rename local that is defined in a macro declaration")
+                        }
                     }
-                    None => {
-                        bail!("Can't rename local that is defined in a macro declaration")
-                    }
-                },
+                }
             };
             file_id = Some(source.file_id);
             if let Either::Left(pat) = source.value {
                 let name_range = pat.name().unwrap().syntax().text_range();
+
                 // special cases required for renaming fields/locals in Record patterns
                 if let Some(pat_field) = pat.syntax().parent().and_then(ast::RecordPatField::cast) {
                     if let Some(name_ref) = pat_field.name_ref() {
