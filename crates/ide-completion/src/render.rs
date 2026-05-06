@@ -713,7 +713,9 @@ fn compute_ref_match(
     if let Some(expected_without_ref) = &expected_without_ref
         && (completion_without_ref.is_none()
             || completion_ty.could_unify_with(ctx.db, expected_without_ref))
-        && completion_ty.autoderef(ctx.db).any(|ty| ty == *expected_without_ref)
+        && completion_ty
+            .autoderef(ctx.db)
+            .any(|ty| ty.could_unify_with(ctx.db, expected_without_ref))
     {
         cov_mark::hit!(suggest_ref);
         let mutability = if expected_type.is_mutable_reference() {
@@ -2914,6 +2916,26 @@ fn main() {
                 lc &ssss [type+local]
                 st S S []
                 fn foo(…) fn(&&S) []
+                fn main() fn() []
+            "#]],
+        );
+        check_relevance(
+            r#"
+struct S<T>(T);
+fn foo<T>(s: &mut S<T>) {}
+fn main() {
+    let mut ssss = S(2u32);
+    foo($0);
+}
+            "#,
+            expect![[r#"
+                st S(…) S(T) []
+                st &mut S(…) [type]
+                lc ssss S<u32> [local]
+                lc &mut ssss [type+local]
+                st S S<{unknown}> []
+                st &mut S [type]
+                fn foo(…) fn(&mut S<T>) []
                 fn main() fn() []
             "#]],
         );
