@@ -398,7 +398,7 @@ fn get_receiver_text(
     }
     let file_text = sema.db.file_text(range.file_id.file_id(sema.db));
     let text = file_text.text(sema.db);
-    let indent_spaces = indent_of_tail_line(&text[TextRange::up_to(range.range.start())]);
+    let indent_spaces = indent_of_tail_line(&text[TextRange::up_to(range.range.end())]);
     let mut text = stdx::dedent_by(indent_spaces, &text[range.range]);
 
     // The receiver texts should be interpreted as-is, as they are expected to be
@@ -1658,7 +1658,9 @@ fn foo(x: Option<i32>, y: Option<i32>) {
     let _f = || {
         x
             .and(y)
-            .map(|it| it+2)
+            .map(|it| {
+                it+2
+            })
             .$0
     };
 }
@@ -1667,8 +1669,10 @@ fn foo(x: Option<i32>, y: Option<i32>) {
 fn foo(x: Option<i32>, y: Option<i32>) {
     let _f = || {
         let $0 = x
-    .and(y)
-    .map(|it| it+2);
+.and(y)
+.map(|it| {
+    it+2
+});
     };
 }
 "#,
