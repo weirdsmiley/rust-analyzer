@@ -21,8 +21,7 @@ use syntax::{
     SyntaxNode, SyntaxToken, T, TextRange, TextSize, WalkEvent,
     ast::{
         self, HasArgList, HasAttrs, HasGenericParams, HasName, HasTypeBounds, Whitespace,
-        edit::{AstNodeEdit, IndentLevel},
-        edit_in_place::AttrsOwnerEdit,
+        edit::{AstNodeEdit, AttrsOwnerEdit, IndentLevel},
         make,
         prec::ExprPrecedence,
         syntax_factory::SyntaxFactory,
@@ -242,8 +241,9 @@ pub fn add_trait_assoc_items_to_impl(
                     PathTransform::trait_impl(target_scope, &source_scope, trait_, impl_.clone());
                 cloned_item = ast::AssocItem::cast(transform.apply(cloned_item.syntax())).unwrap();
             }
-            cloned_item.remove_attrs_and_docs();
-            cloned_item
+            let (editor, cloned_item) = SyntaxEditor::with_ast_node(&cloned_item);
+            cloned_item.remove_attrs_and_docs(&editor);
+            ast::AssocItem::cast(editor.finish().new_root().clone()).unwrap()
         })
         .filter_map(|item| match item {
             ast::AssocItem::Fn(fn_) if fn_.body().is_none() => {
