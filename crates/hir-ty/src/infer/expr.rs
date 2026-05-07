@@ -1214,7 +1214,9 @@ impl<'db> InferenceContext<'_, 'db> {
                         // Check the base_expr, regardless of a bad expected adt_ty, so we can get
                         // type errors on that expression, too.
                         self.infer_expr_no_expect(base_expr, ExprIsRead::Yes);
-                        // FIXME: Emit an error: functional update syntax on non-struct.
+                        self.push_diagnostic(
+                            InferenceDiagnostic::FunctionalRecordUpdateOnNonStruct { base_expr },
+                        );
                     }
                 } else {
                     self.infer_expr_suptype_coerce_never(
@@ -1223,7 +1225,9 @@ impl<'db> InferenceContext<'_, 'db> {
                         ExprIsRead::Yes,
                     );
                     if !matches!(adt_id, AdtId::StructId(_)) {
-                        // FIXME: Emit an error: functional update syntax on non-struct.
+                        self.push_diagnostic(
+                            InferenceDiagnostic::FunctionalRecordUpdateOnNonStruct { base_expr },
+                        );
                     }
                 }
             }

@@ -389,6 +389,10 @@ pub enum InferenceDiagnostic {
         #[type_visitable(ignore)]
         expr: ExprId,
     },
+    FunctionalRecordUpdateOnNonStruct {
+        #[type_visitable(ignore)]
+        base_expr: ExprId,
+    },
     MismatchedArgCount {
         #[type_visitable(ignore)]
         call_expr: ExprId,
