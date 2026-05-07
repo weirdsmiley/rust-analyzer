@@ -11,7 +11,7 @@ use crate::{
     db::HirDatabase,
     lower::GenericPredicates,
     next_solver::{
-        DbInterner, TypingMode,
+        DbInterner, TypingMode, Unnormalized,
         infer::{DbInternerInferExt, traits::ObligationCause},
         obligation_ctxt::ObligationCtxt,
         util::clauses_as_obligations,
@@ -81,7 +81,7 @@ fn specializes_query(
     let infcx = interner.infer_ctxt().build(TypingMode::non_body_analysis());
 
     let specializing_impl_trait_ref =
-        db.impl_trait(specializing_impl_def_id).unwrap().instantiate_identity();
+        db.impl_trait(specializing_impl_def_id).unwrap().instantiate_identity().skip_norm_wip();
     let cause = &ObligationCause::dummy();
     debug!(
         "fulfill_implication({:?}, trait_ref={:?} |- {:?} applies)",
@@ -96,7 +96,8 @@ fn specializes_query(
     let parent_impl_trait_ref = db
         .impl_trait(parent_impl_def_id)
         .expect("expected source impl to be a trait impl")
-        .instantiate(interner, parent_args);
+        .instantiate(interner, parent_args)
+        .skip_norm_wip();
 
     // do the impls unify? If not, no specialization.
     let Ok(()) = ocx.eq(cause, param_env, specializing_impl_trait_ref, parent_impl_trait_ref)
@@ -109,7 +110,8 @@ fn specializes_query(
     // only be referenced via projection predicates.
     ocx.register_obligations(clauses_as_obligations(
         GenericPredicates::query_all(db, parent_impl_def_id.into())
-            .iter_instantiated(interner, parent_args.as_slice()),
+            .iter_instantiated(interner, parent_args.as_slice())
+            .map(Unnormalized::skip_norm_wip),
         *cause,
         param_env,
     ));

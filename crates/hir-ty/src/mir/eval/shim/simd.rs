@@ -21,7 +21,8 @@ impl<'a, 'db: 'a> Evaluator<'a, 'db> {
                             };
                             let field_ty = self.db.field_types(id.into())[first_field]
                                 .get()
-                                .instantiate(self.interner(), subst);
+                                .instantiate(self.interner(), subst)
+                                .skip_norm_wip();
                             return Ok((fields.len(), field_ty));
                         }
                         return Err(MirEvalError::InternalError(

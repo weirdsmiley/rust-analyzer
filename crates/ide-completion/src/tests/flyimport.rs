@@ -1809,9 +1809,8 @@ fn intrinsics() {
         r#"
     //- /core.rs crate:core
     pub mod intrinsics {
-        extern "rust-intrinsic" {
-            pub fn transmute<Src, Dst>(src: Src) -> Dst;
-        }
+        #[rustc_intrinsic]
+        pub unsafe fn transmute<Src, Dst>(src: Src) -> Dst;
     }
     pub mod mem {
         pub use crate::intrinsics::transmute;
@@ -1829,9 +1828,8 @@ fn intrinsics() {
         r#"
 //- /core.rs crate:core
 pub mod intrinsics {
-    extern "rust-intrinsic" {
-        pub fn transmute<Src, Dst>(src: Src) -> Dst;
-    }
+    #[rustc_intrinsic]
+    pub unsafe fn transmute<Src, Dst>(src: Src) -> Dst;
 }
 pub mod mem {
     pub use crate::intrinsics::transmute;

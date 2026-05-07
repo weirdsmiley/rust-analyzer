@@ -41,7 +41,7 @@ use crate::{
     lower::GenericPredicates,
     next_solver::{
         AnyImplId, Binder, ClauseKind, DbInterner, FnSig, GenericArgs, ParamEnv, PredicateKind,
-        SimplifiedType, SolverDefId, TraitRef, Ty, TyKind, TypingMode,
+        SimplifiedType, SolverDefId, TraitRef, Ty, TyKind, TypingMode, Unnormalized,
         infer::{
             BoundRegionConversionTime, DbInternerInferExt, InferCtxt, InferOk,
             select::ImplSource,
@@ -289,8 +289,11 @@ impl<'db> InferenceTable<'db> {
         // N.B., instantiate late-bound regions before normalizing the
         // function signature so that normalization does not need to deal
         // with bound regions.
-        let fn_sig =
-            self.db.callable_item_signature(method_item.into()).instantiate(interner, args);
+        let fn_sig = self
+            .db
+            .callable_item_signature(method_item.into())
+            .instantiate(interner, args)
+            .skip_norm_wip();
         let fn_sig = self.infer_ctxt.instantiate_binder_with_fresh_vars(
             cause.span(),
             BoundRegionConversionTime::FnCall,
@@ -307,7 +310,7 @@ impl<'db> InferenceTable<'db> {
         // any late-bound regions appearing in its bounds.
         let bounds = GenericPredicates::query_all(self.db, method_item.into());
         let bounds = clauses_as_obligations(
-            bounds.iter_instantiated(interner, args.as_slice()),
+            bounds.iter_instantiated(interner, args.as_slice()).map(Unnormalized::skip_norm_wip),
             cause,
             self.param_env,
         );
@@ -596,7 +599,7 @@ impl InherentImpls {
                 for impl_id in module_data.scope.inherent_impls() {
                     let interner = DbInterner::new_no_crate(db);
                     let self_ty = db.impl_self_ty(impl_id);
-                    let self_ty = self_ty.instantiate_identity();
+                    let self_ty = self_ty.instantiate_identity().skip_norm_wip();
                     if let Some(self_ty) =
                         simplify_type(interner, self_ty, TreatParams::InstantiateWithInfer)
                     {
@@ -711,7 +714,7 @@ impl TraitImpls {
             for (_module_id, module_data) in def_map.modules() {
                 for impl_id in module_data.scope.trait_impls() {
                     let trait_ref = match db.impl_trait(impl_id) {
-                        Some(tr) => tr.instantiate_identity(),
+                        Some(tr) => tr.instantiate_identity().skip_norm_wip(),
                         None => continue,
                     };
                     // Reservation impls should be ignored during trait resolution, so we never need

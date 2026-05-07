@@ -5,6 +5,7 @@ use rustc_type_ir::{
     RegionVid, TyVid, TypeFoldable, TypingMode, UniverseIndex,
     inherent::{Const as _, IntoKind, Ty as _},
     relate::combine::PredicateEmittingRelation,
+    solve::VisibleForLeakCheck,
 };
 
 use crate::{
@@ -29,8 +30,12 @@ impl<'db> rustc_type_ir::InferCtxtLike for InferCtxt<'db> {
         true
     }
 
-    fn typing_mode(&self) -> TypingMode<DbInterner<'db>> {
-        self.typing_mode()
+    fn disable_trait_solver_fast_paths(&self) -> bool {
+        false
+    }
+
+    fn typing_mode_raw(&self) -> TypingMode<DbInterner<'db>> {
+        self.typing_mode_raw()
     }
 
     fn universe(&self) -> UniverseIndex {
@@ -257,11 +262,23 @@ impl<'db> rustc_type_ir::InferCtxtLike for InferCtxt<'db> {
         self.probe(|_| probe())
     }
 
-    fn sub_regions(&self, sub: Region<'db>, sup: Region<'db>, _span: Span) {
+    fn sub_regions(
+        &self,
+        sub: Region<'db>,
+        sup: Region<'db>,
+        _vis: VisibleForLeakCheck,
+        _span: Span,
+    ) {
         self.inner.borrow_mut().unwrap_region_constraints().make_subregion(sub, sup);
     }
 
-    fn equate_regions(&self, a: Region<'db>, b: Region<'db>, _span: Span) {
+    fn equate_regions(
+        &self,
+        a: Region<'db>,
+        b: Region<'db>,
+        _vis: VisibleForLeakCheck,
+        _span: Span,
+    ) {
         self.inner.borrow_mut().unwrap_region_constraints().make_eqregion(a, b);
     }
 

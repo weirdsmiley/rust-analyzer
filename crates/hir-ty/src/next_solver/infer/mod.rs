@@ -11,7 +11,6 @@ use hir_def::{GenericParamId, TraitId};
 use opaque_types::{OpaqueHiddenType, OpaqueTypeStorage};
 use region_constraints::{RegionConstraintCollector, RegionConstraintStorage};
 use rustc_next_trait_solver::solve::{GoalEvaluation, SolverDelegateEvalExt};
-use rustc_pattern_analysis::Captures;
 use rustc_type_ir::{
     ClosureKind, ConstVid, FloatVarValue, FloatVid, GenericArgKind, InferConst, InferTy,
     IntVarValue, IntVid, OutlivesPredicate, RegionVid, TermKind, TyVid, TypeFoldable, TypeFolder,
@@ -403,7 +402,7 @@ impl<'db> InferOk<'db, ()> {
 
 impl<'db> InferCtxt<'db> {
     #[inline(always)]
-    pub fn typing_mode(&self) -> TypingMode<'db> {
+    pub fn typing_mode_raw(&self) -> TypingMode<'db> {
         self.typing_mode
     }
 
@@ -931,7 +930,7 @@ impl<'db> InferCtxt<'db> {
 
     #[inline(always)]
     pub fn can_define_opaque_ty(&self, id: impl Into<SolverDefId>) -> bool {
-        match self.typing_mode_unchecked() {
+        match self.typing_mode_raw().assert_not_erased() {
             TypingMode::Analysis { defining_opaque_types_and_generators } => {
                 defining_opaque_types_and_generators.contains(&id.into())
             }
@@ -1201,7 +1200,7 @@ impl<'db> InferCtxt<'db> {
     #[inline]
     pub fn is_ty_infer_var_definitely_unchanged<'a>(
         &'a self,
-    ) -> impl Fn(TyOrConstInferVar) -> bool + Captures<'db> + 'a {
+    ) -> impl Fn(TyOrConstInferVar) -> bool + use<'a, 'db> {
         // This hoists the borrow/release out of the loop body.
         let inner = self.inner.try_borrow();
 

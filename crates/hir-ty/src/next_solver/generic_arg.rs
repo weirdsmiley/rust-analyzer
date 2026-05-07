@@ -579,7 +579,7 @@ impl<'db> GenericArgs<'db> {
     {
         let defaults = interner.db.generic_defaults(def_id);
         Self::for_item(interner, def_id.into(), |idx, id, prev| match defaults.get(idx as usize) {
-            Some(default) => default.instantiate(interner, prev),
+            Some(default) => default.instantiate(interner, prev).skip_norm_wip(),
             None => fallback(idx, id, prev),
         })
     }
@@ -614,7 +614,7 @@ impl<'db> GenericArgs<'db> {
         Self::fill_rest(interner, def_id.into(), first, |idx, id, prev| {
             defaults
                 .get(idx as usize)
-                .map(|default| default.instantiate(interner, prev))
+                .map(|default| default.instantiate(interner, prev).skip_norm_wip())
                 .unwrap_or_else(|| fallback(idx, id, prev))
         })
     }

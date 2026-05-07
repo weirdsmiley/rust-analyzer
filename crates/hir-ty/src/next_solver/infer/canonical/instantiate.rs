@@ -437,7 +437,7 @@ impl<'db> InferCtxt<'db> {
             // the generic args of the opaque with the generic params of its hidden type version.
             obligations.extend(
                 self.at(cause, param_env)
-                    .eq(Ty::new_opaque(self.interner, a.def_id, a.args), b)?
+                    .eq(Ty::new_opaque(self.interner, a.def_id.0, a.args), b)?
                     .obligations,
             );
         }

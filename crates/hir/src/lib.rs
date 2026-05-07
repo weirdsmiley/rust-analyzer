@@ -173,7 +173,7 @@ pub use {
     // FIXME: Properly encapsulate mir
     hir_ty::mir,
     hir_ty::{
-        CastError, FnAbi, PointerCast, attach_db, attach_db_allow_change,
+        CastError, PointerCast, attach_db, attach_db_allow_change,
         consteval::ConstEvalError,
         diagnostics::UnsafetyReason,
         display::{ClosureStyle, DisplayTarget, HirDisplay, HirDisplayError, HirWrite},
@@ -946,7 +946,7 @@ impl Module {
                     .collect();
 
                 if !missing.is_empty() {
-                    let self_ty = db.impl_self_ty(impl_id).instantiate_identity();
+                    let self_ty = db.impl_self_ty(impl_id).instantiate_identity().skip_norm_wip();
                     let self_ty = structurally_normalize_ty(
                         &infcx,
                         self_ty,
@@ -1345,7 +1345,7 @@ impl<'db> InstantiatedField<'db> {
 
         let var_id = self.inner.parent.into();
         let field = db.field_types(var_id)[self.inner.id].get();
-        let ty = field.instantiate(interner, self.args);
+        let ty = field.instantiate(interner, self.args).skip_norm_wip();
         TypeNs::new(db, var_id, ty)
     }
 }
@@ -1440,7 +1440,7 @@ impl Field {
         };
         let interner = DbInterner::new_no_crate(db);
         let args = generic_args_from_tys(interner, def_id.into(), generics.map(|ty| ty.ty));
-        let ty = db.field_types(var_id)[self.id].get().instantiate(interner, args);
+        let ty = db.field_types(var_id)[self.id].get().instantiate(interner, args).skip_norm_wip();
         Type::new(db, var_id, ty)
     }
 
@@ -1570,7 +1570,7 @@ impl<'db> InstantiatedStruct<'db> {
         let interner = DbInterner::new_no_crate(db);
 
         let ty = db.ty(self.inner.id.into());
-        TypeNs::new(db, self.inner.id, ty.instantiate(interner, self.args))
+        TypeNs::new(db, self.inner.id, ty.instantiate(interner, self.args).skip_norm_wip())
     }
 }
 
@@ -1732,7 +1732,7 @@ impl<'db> InstantiatedEnum<'db> {
         let interner = DbInterner::new_no_crate(db);
 
         let ty = db.ty(self.inner.id.into());
-        TypeNs::new(db, self.inner.id, ty.instantiate(interner, self.args))
+        TypeNs::new(db, self.inner.id, ty.instantiate(interner, self.args).skip_norm_wip())
     }
 }
 
@@ -2017,12 +2017,12 @@ impl AnonConst {
     pub fn ty<'db>(self, db: &'db dyn HirDatabase) -> Type<'db> {
         let loc = self.id.loc(db);
         let env = body_param_env_from_has_crate(db, loc.owner);
-        Type { env, ty: loc.ty.get().instantiate_identity() }
+        Type { env, ty: loc.ty.get().instantiate_identity().skip_norm_wip() }
     }
 
     pub fn eval(self, db: &dyn HirDatabase) -> Result<EvaluatedConst<'_>, ConstEvalError> {
         let interner = DbInterner::new_no_crate(db);
-        let ty = self.id.loc(db).ty.get().instantiate_identity();
+        let ty = self.id.loc(db).ty.get().instantiate_identity().skip_norm_wip();
         db.anon_const_eval(self.id, GenericArgs::empty(interner), None).map(|it| EvaluatedConst {
             allocation: it,
             def: self.id.into(),
@@ -2486,7 +2486,8 @@ impl Function {
                 let resolver = id.resolver(db);
                 let interner = DbInterner::new_no_crate(db);
                 // FIXME: This shouldn't be `instantiate_identity()`, we shouldn't leak `TyKind::Param`s.
-                let callable_sig = db.callable_item_signature(id.into()).instantiate_identity();
+                let callable_sig =
+                    db.callable_item_signature(id.into()).instantiate_identity().skip_norm_wip();
                 let ty = Ty::new_fn_ptr(interner, callable_sig);
                 Type::new_with_resolver_inner(db, &resolver, ty)
             }
@@ -2563,10 +2564,13 @@ impl Function {
                 // `impl_generics_len - impl_trait_ref.args.len()`.
                 let trait_method_fn_ptr = Ty::new_fn_ptr(
                     interner,
-                    db.callable_item_signature(trait_method.into()).instantiate_identity(),
+                    db.callable_item_signature(trait_method.into())
+                        .instantiate_identity()
+                        .skip_norm_wip(),
                 );
-                let impl_trait_ref =
-                    hir_ty::builtin_derive::impl_trait(interner, impl_).instantiate_identity();
+                let impl_trait_ref = hir_ty::builtin_derive::impl_trait(interner, impl_)
+                    .instantiate_identity()
+                    .skip_norm_wip();
                 let trait_method_args =
                     GenericArgs::identity_for_item(interner, trait_method.into());
                 let trait_method_own_args = GenericArgs::new_from_iter(
@@ -2581,8 +2585,9 @@ impl Function {
                     interner,
                     impl_trait_ref.args.iter().chain(shifted_trait_method_own_args),
                 );
-                let impl_method_fn_ptr =
-                    EarlyBinder::bind(trait_method_fn_ptr).instantiate(interner, impl_method_args);
+                let impl_method_fn_ptr = EarlyBinder::bind(trait_method_fn_ptr)
+                    .instantiate(interner, impl_method_args)
+                    .skip_norm_wip();
                 Type { env, ty: impl_method_fn_ptr }
             }
         }
@@ -2613,7 +2618,7 @@ impl Function {
         let ret_type = self.ret_type(db);
         let interner = DbInterner::new_no_crate(db);
         let args = self.adapt_generic_args(interner, generics);
-        ret_type.derived(EarlyBinder::bind(ret_type.ty).instantiate(interner, args))
+        ret_type.derived(EarlyBinder::bind(ret_type.ty).instantiate(interner, args).skip_norm_wip())
     }
 
     fn adapt_generic_args<'db>(
@@ -2728,7 +2733,7 @@ impl Function {
                 idx: param.idx,
                 ty: Type {
                     env: param.ty.env,
-                    ty: EarlyBinder::bind(param.ty.ty).instantiate(interner, args),
+                    ty: EarlyBinder::bind(param.ty.ty).instantiate(interner, args).skip_norm_wip(),
                 },
             })
             .collect()
@@ -3093,7 +3098,7 @@ impl SelfParam {
         let interner = DbInterner::new_no_crate(db);
         let args = self.func.adapt_generic_args(interner, generics);
         let Type { env, ty } = self.ty(db);
-        Type { env, ty: EarlyBinder::bind(ty).instantiate(interner, args) }
+        Type { env, ty: EarlyBinder::bind(ty).instantiate(interner, args).skip_norm_wip() }
     }
 }
 
@@ -3191,7 +3196,7 @@ impl Const {
     /// Evaluate the constant.
     pub fn eval(self, db: &dyn HirDatabase) -> Result<EvaluatedConst<'_>, ConstEvalError> {
         let interner = DbInterner::new_no_crate(db);
-        let ty = db.value_ty(self.id.into()).unwrap().instantiate_identity();
+        let ty = db.value_ty(self.id.into()).unwrap().instantiate_identity().skip_norm_wip();
         db.const_eval(self.id, GenericArgs::empty(interner), None).map(|it| EvaluatedConst {
             allocation: it,
             def: self.id.into(),
@@ -3271,7 +3276,7 @@ impl Static {
 
     /// Evaluate the static initializer.
     pub fn eval(self, db: &dyn HirDatabase) -> Result<EvaluatedConst<'_>, ConstEvalError> {
-        let ty = db.value_ty(self.id.into()).unwrap().instantiate_identity();
+        let ty = db.value_ty(self.id.into()).unwrap().instantiate_identity().skip_norm_wip();
         db.const_eval_static(self.id).map(|it| EvaluatedConst {
             allocation: it,
             def: self.id.into(),
@@ -4861,7 +4866,7 @@ fn generic_arg_from_param(db: &dyn HirDatabase, id: TypeOrConstParamId) -> Optio
     let defaults = db.generic_defaults(id.parent);
     let ty = defaults.get(local_idx as usize)?;
     // FIXME: This shouldn't be `instantiate_identity()`, we shouldn't leak `TyKind::Param`s.
-    Some(ty.instantiate_identity())
+    Some(ty.instantiate_identity().skip_norm_wip())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -5036,7 +5041,7 @@ impl Impl {
     pub fn trait_ref(self, db: &dyn HirDatabase) -> Option<TraitRef<'_>> {
         match self.id {
             AnyImplId::ImplId(id) => {
-                let trait_ref = db.impl_trait(id)?.instantiate_identity();
+                let trait_ref = db.impl_trait(id)?.instantiate_identity().skip_norm_wip();
                 let resolver = id.resolver(db);
                 Some(TraitRef::new_with_resolver(db, &resolver, trait_ref))
             }
@@ -5048,8 +5053,9 @@ impl Impl {
                     param_env: hir_ty::builtin_derive::param_env(interner, id),
                     krate,
                 };
-                let trait_ref =
-                    hir_ty::builtin_derive::impl_trait(interner, id).instantiate_identity();
+                let trait_ref = hir_ty::builtin_derive::impl_trait(interner, id)
+                    .instantiate_identity()
+                    .skip_norm_wip();
                 Some(TraitRef { env, trait_ref })
             }
         }
@@ -5060,7 +5066,7 @@ impl Impl {
             AnyImplId::ImplId(id) => {
                 let resolver = id.resolver(db);
                 // FIXME: This shouldn't be `instantiate_identity()`, we shouldn't leak `TyKind::Param`s.
-                let ty = db.impl_self_ty(id).instantiate_identity();
+                let ty = db.impl_self_ty(id).instantiate_identity().skip_norm_wip();
                 Type::new_with_resolver_inner(db, &resolver, ty)
             }
             AnyImplId::BuiltinDeriveImplId(id) => {
@@ -5073,6 +5079,7 @@ impl Impl {
                 };
                 let ty = hir_ty::builtin_derive::impl_trait(interner, id)
                     .instantiate_identity()
+                    .skip_norm_wip()
                     .self_ty();
                 Type { env, ty }
             }
@@ -5548,13 +5555,13 @@ impl<'db> Type<'db> {
             }
         };
         let args = GenericArgs::error_for_item(interner, def.into());
-        Type::new(db, def, ty.instantiate(interner, args))
+        Type::new(db, def, ty.instantiate(interner, args).skip_norm_wip())
     }
 
     // FIXME: We shouldn't leak `TyKind::Param`s.
     fn from_def_params(db: &'db dyn HirDatabase, def: impl Into<TyDefId> + HasResolver) -> Self {
         let ty = db.ty(def.into());
-        Type::new(db, def, ty.instantiate_identity())
+        Type::new(db, def, ty.instantiate_identity().skip_norm_wip())
     }
 
     fn from_value_def(
@@ -5578,7 +5585,7 @@ impl<'db> Type<'db> {
             }
         };
         let args = GenericArgs::error_for_item(interner, def.into());
-        Type::new(db, def, ty.instantiate(interner, args))
+        Type::new(db, def, ty.instantiate(interner, args).skip_norm_wip())
     }
 
     pub fn new_slice(ty: Self) -> Self {
@@ -5656,7 +5663,10 @@ impl<'db> Type<'db> {
                                     .fields()
                                     .iter()
                                     .map(|(idx, _)| {
-                                        field_types[idx].get().instantiate(self.interner, args)
+                                        field_types[idx]
+                                            .get()
+                                            .instantiate(self.interner, args)
+                                            .skip_norm_wip()
                                     })
                                     .filter(|it| !it.references_non_lt_error())
                                     .collect()
@@ -5980,7 +5990,7 @@ impl<'db> Type<'db> {
             .iter()
             .map(|(local_id, ty)| {
                 let def = Field { parent: variant_id.into(), id: local_id };
-                let ty = ty.get().instantiate(interner, substs);
+                let ty = ty.get().instantiate(interner, substs).skip_norm_wip();
                 (def, self.derived(ty))
             })
             .collect()
@@ -6483,7 +6493,7 @@ impl<'db> Type<'db> {
         else {
             return None;
         };
-        match def_id.expect_type_alias().loc(db).container {
+        match def_id.0.loc(db).container {
             ItemContainerId::TraitId(id) => Some(Trait { id }),
             _ => None,
         }

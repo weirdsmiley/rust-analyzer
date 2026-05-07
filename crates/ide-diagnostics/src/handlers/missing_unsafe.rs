@@ -274,25 +274,6 @@ fn main() {
     }
 
     #[test]
-    fn no_missing_unsafe_diagnostic_with_legacy_safe_intrinsic() {
-        check_diagnostics(
-            r#"
-extern "rust-intrinsic" {
-    #[rustc_safe_intrinsic]
-    pub fn bitreverse(x: u32) -> u32; // Safe intrinsic
-    pub fn floorf32(x: f32) -> f32; // Unsafe intrinsic
-}
-
-fn main() {
-    let _ = bitreverse(12);
-    let _ = floorf32(12.0);
-          //^^^^^^^^^^^^^^💡 error: call to unsafe function is unsafe and requires an unsafe function or block
-}
-"#,
-        );
-    }
-
-    #[test]
     fn no_missing_unsafe_diagnostic_with_deprecated_safe_2024() {
         check_diagnostics(
             r#"
@@ -411,30 +392,6 @@ static mut STATIC_MUT: Ty = Ty { a: 0 };
 
 fn main() {
     let _x = unsafe { STATIC_MUT.a };
-}
-"#,
-        )
-    }
-
-    #[test]
-    fn add_unsafe_block_when_calling_unsafe_intrinsic() {
-        check_fix(
-            r#"
-extern "rust-intrinsic" {
-    pub fn floorf32(x: f32) -> f32;
-}
-
-fn main() {
-    let _ = floorf32$0(12.0);
-}
-"#,
-            r#"
-extern "rust-intrinsic" {
-    pub fn floorf32(x: f32) -> f32;
-}
-
-fn main() {
-    let _ = unsafe { floorf32(12.0) };
 }
 "#,
         )

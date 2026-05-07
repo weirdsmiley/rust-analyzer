@@ -21,7 +21,8 @@ use crate::{
     db::HirDatabase,
     next_solver::{
         AliasTy, Clause, Clauses, DbInterner, EarlyBinder, GenericArgs, ParamEnv,
-        StoredEarlyBinder, StoredTy, TraitRef, Ty, TyKind, fold::fold_tys, generics::Generics,
+        StoredEarlyBinder, StoredTy, TraitRef, Ty, TyKind, Unnormalized, fold::fold_tys,
+        generics::Generics,
     },
 };
 
@@ -197,6 +198,7 @@ pub fn predicates(db: &dyn HirDatabase, impl_: BuiltinDeriveImplId) -> GenericPr
             };
             let duplicated_bounds =
                 adt_predicates.explicit_predicates().iter_identity().filter_map(|pred| {
+                    let pred = pred.skip_norm_wip();
                     let mentions_pointee =
                         pred.visit_with(&mut MentionsPointee { pointee_param_idx }).is_break();
                     if !mentions_pointee {
@@ -218,6 +220,7 @@ pub fn predicates(db: &dyn HirDatabase, impl_: BuiltinDeriveImplId) -> GenericPr
                     adt_predicates
                         .explicit_predicates()
                         .iter_identity()
+                        .map(Unnormalized::skip_norm_wip)
                         .chain(duplicated_bounds)
                         .chain(unsize_bound),
                 )
@@ -319,6 +322,7 @@ fn simple_trait_predicates<'db>(
             adt_predicates
                 .explicit_predicates()
                 .iter_identity()
+                .map(Unnormalized::skip_norm_wip)
                 .chain(extra_predicates)
                 .chain(assoc_type_bounds),
         )
@@ -361,7 +365,7 @@ fn extend_assoc_type_bounds<'db>(
 
     let mut visitor = ProjectionFinder { interner, assoc_type_bounds, trait_id, trait_ };
     for (_, field) in fields.iter() {
-        field.get().instantiate_identity().visit_with(&mut visitor);
+        field.get().instantiate_identity().skip_norm_wip().visit_with(&mut visitor);
     }
 }
 

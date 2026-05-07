@@ -9,6 +9,7 @@ use hir_def::{
     hir::{ClosureKind, CoroutineKind, CoroutineSource, ExprId, PatId},
     type_ref::TypeRefId,
 };
+use rustc_abi::ExternAbi;
 use rustc_type_ir::{
     AliasTyKind, ClosureArgs, ClosureArgsParts, CoroutineArgs, CoroutineArgsParts,
     CoroutineClosureArgs, CoroutineClosureArgsParts, InferTy, Interner, TypeSuperVisitable,
@@ -18,12 +19,13 @@ use rustc_type_ir::{
 use tracing::{debug, instrument};
 
 use crate::{
-    FnAbi, Span,
+    Span,
     db::{InternedClosure, InternedClosureId, InternedCoroutineClosureId, InternedCoroutineId},
     infer::{BreakableKind, Diverges, coerce::CoerceMany, pat::PatOrigin},
     next_solver::{
         AliasTy, Binder, ClauseKind, DbInterner, ErrorGuaranteed, FnSig, GenericArg, GenericArgs,
-        PolyFnSig, PolyProjectionPredicate, Predicate, PredicateKind, SolverDefId, Ty, TyKind,
+        PolyFnSig, PolyProjectionPredicate, Predicate, PredicateKind, SolverDefId, TermId, Ty,
+        TyKind, Unnormalized,
         abi::Safety,
         infer::{
             BoundRegionConversionTime, InferOk, InferResult,
@@ -115,9 +117,9 @@ impl<'db> InferenceContext<'_, 'db> {
                     interner.mk_fn_sig(
                         [Ty::new_tup(interner, sig.inputs())],
                         sig.output(),
-                        sig.c_variadic,
-                        sig.safety,
-                        sig.abi,
+                        sig.c_variadic(),
+                        sig.safety(),
+                        sig.abi(),
                     )
                 });
 
@@ -241,9 +243,9 @@ impl<'db> InferenceContext<'_, 'db> {
                                         ),
                                     ],
                                     Ty::new_tup(interner, &[bound_yield_ty, bound_return_ty]),
-                                    sig.c_variadic,
-                                    sig.safety,
-                                    sig.abi,
+                                    sig.c_variadic(),
+                                    sig.safety(),
+                                    sig.abi(),
                                 )
                             }),
                         ),
@@ -285,9 +287,9 @@ impl<'db> InferenceContext<'_, 'db> {
                 liberated_sig = interner.mk_fn_sig(
                     liberated_sig.inputs().iter().copied(),
                     coroutine_output_ty,
-                    liberated_sig.c_variadic,
-                    liberated_sig.safety,
-                    liberated_sig.abi,
+                    liberated_sig.c_variadic(),
+                    liberated_sig.safety(),
+                    liberated_sig.abi(),
                 );
 
                 (
@@ -367,9 +369,10 @@ impl<'db> InferenceContext<'_, 'db> {
                     expected_ty,
                     closure_kind,
                     def_id
-                        .expect_opaque_ty()
+                        .0
                         .predicates(self.db)
                         .iter_instantiated_copied(self.interner(), args.as_slice())
+                        .map(Unnormalized::skip_norm_wip)
                         .map(|clause| clause.as_predicate()),
                 ),
             TyKind::Dynamic(object_type, ..) => {
@@ -655,7 +658,7 @@ impl<'db> InferenceContext<'_, 'db> {
                 bound.predicate.kind().skip_binder()
                 && let ret_projection = bound.predicate.kind().rebind(ret_projection)
                 && let Some(ret_projection) = ret_projection.no_bound_vars()
-                && let SolverDefId::TypeAliasId(assoc_type) = ret_projection.def_id()
+                && let TermId::TypeAliasId(assoc_type) = ret_projection.def_id().0
                 && Some(assoc_type) == self.lang_items.FutureOutput
             {
                 return_ty = Some(ret_projection.term.expect_type());
@@ -808,9 +811,9 @@ impl<'db> InferenceContext<'_, 'db> {
             self.interner().mk_fn_sig(
                 sig.inputs().iter().copied(),
                 sig.output(),
-                sig.c_variadic,
+                sig.c_variadic(),
                 Safety::Safe,
-                FnAbi::RustCall,
+                ExternAbi::RustCall,
             )
         });
 
@@ -931,9 +934,9 @@ impl<'db> InferenceContext<'_, 'db> {
             expected_sigs.liberated_sig = table.interner().mk_fn_sig(
                 inputs,
                 supplied_output_ty,
-                expected_sigs.liberated_sig.c_variadic,
+                expected_sigs.liberated_sig.c_variadic(),
                 Safety::Safe,
-                FnAbi::RustCall,
+                ExternAbi::RustCall,
             );
 
             Ok(InferOk { value: expected_sigs, obligations: all_obligations })
@@ -1001,7 +1004,7 @@ impl<'db> InferenceContext<'_, 'db> {
             supplied_return,
             false,
             Safety::Safe,
-            FnAbi::RustCall,
+            ExternAbi::RustCall,
         ))
     }
 
@@ -1048,9 +1051,10 @@ impl<'db> InferenceContext<'_, 'db> {
                 return Some(self.types.types.error);
             }
             TyKind::Alias(AliasTy { kind: AliasTyKind::Opaque { def_id }, args, .. }) => def_id
-                .expect_opaque_ty()
+                .0
                 .predicates(self.db)
                 .iter_instantiated_copied(self.interner(), &args)
+                .map(Unnormalized::skip_norm_wip)
                 .find_map(|p| get_future_output(p.as_predicate()))?,
             TyKind::Error(_) => return Some(ret_ty),
             _ => {
@@ -1091,7 +1095,7 @@ impl<'db> InferenceContext<'_, 'db> {
         // The `Future` trait has only one associated item, `Output`,
         // so check that this is what we see.
         let output_assoc_item = self.lang_items.FutureOutput;
-        if output_assoc_item != Some(predicate.projection_term.def_id.expect_type_alias()) {
+        if output_assoc_item.map(Into::into) != Some(predicate.def_id().0) {
             panic!(
                 "projecting associated item `{:?}` from future, which is not Output `{:?}`",
                 predicate.projection_term.kind(self.interner()),
@@ -1135,7 +1139,7 @@ impl<'db> InferenceContext<'_, 'db> {
             err_ty,
             false,
             Safety::Safe,
-            FnAbi::RustCall,
+            ExternAbi::RustCall,
         ));
 
         debug!("supplied_sig_of_closure: result={:?}", result);

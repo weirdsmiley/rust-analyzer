@@ -8,9 +8,9 @@ use hir_expand::{
     InFile, Intern, Lookup,
     name::{AsName, Name},
 };
-use intern::{Symbol, sym};
+use intern::sym;
 use la_arena::{Arena, Idx};
-use rustc_abi::{IntegerType, ReprOptions};
+use rustc_abi::{ExternAbi, IntegerType, ReprOptions};
 use syntax::{
     AstNode, NodeOrToken, SyntaxNodePtr, T,
     ast::{self, HasGenericParams, HasName, HasVisibility, IsString},
@@ -607,7 +607,7 @@ pub struct FunctionSignature {
     pub store: ExpressionStore,
     pub params: Box<[TypeRefId]>,
     pub ret_type: Option<TypeRefId>,
-    pub abi: Option<Symbol>,
+    pub abi: ExternAbi,
     pub flags: FnFlags,
 }
 
@@ -677,14 +677,18 @@ impl FunctionSignature {
             .abi()
             .map(|abi| {
                 abi.abi_string()
-                    .map_or_else(|| sym::C, |it| Symbol::intern(it.text_without_quotes()))
+                    .and_then(|abi| abi.text_without_quotes().parse().ok())
+                    .unwrap_or(ExternAbi::FALLBACK)
             })
             .or_else(|| match loc.container {
-                ItemContainerId::ExternBlockId(extern_block) => extern_block_abi(db, extern_block),
+                ItemContainerId::ExternBlockId(extern_block) => {
+                    Some(extern_block_abi(db, extern_block))
+                }
                 ItemContainerId::ModuleId(_)
                 | ItemContainerId::ImplId(_)
                 | ItemContainerId::TraitId(_) => None,
-            });
+            })
+            .unwrap_or(ExternAbi::Rust);
         let (store, source_map, generic_params, params, ret_type, self_param, variadic) =
             lower_function(db, module, source, id);
         if self_param {
@@ -771,8 +775,6 @@ impl FunctionSignature {
     pub fn is_intrinsic(db: &dyn DefDatabase, id: FunctionId) -> bool {
         let data = FunctionSignature::of(db, id);
         data.flags.contains(FnFlags::RUSTC_INTRINSIC)
-            // Keep this around for a bit until extern "rustc-intrinsic" abis are no longer used
-            || data.abi.as_ref().is_some_and(|abi| *abi == sym::rust_dash_intrinsic)
     }
 }
 
@@ -1136,16 +1138,12 @@ impl EnumVariants {
     }
 }
 
-pub(crate) fn extern_block_abi(
-    db: &dyn DefDatabase,
-    extern_block: ExternBlockId,
-) -> Option<Symbol> {
+#[salsa::tracked]
+pub(crate) fn extern_block_abi(db: &dyn DefDatabase, extern_block: ExternBlockId) -> ExternAbi {
     let source = extern_block.lookup(db).source(db);
-    source.value.abi().map(|abi| {
-        match abi.abi_string() {
-            Some(tok) => Symbol::intern(tok.text_without_quotes()),
-            // `extern` default to be `extern "C"`.
-            _ => sym::C,
-        }
-    })
+    source
+        .value
+        .abi()
+        .and_then(|abi| abi.abi_string()?.text_without_quotes().parse().ok())
+        .unwrap_or(ExternAbi::FALLBACK)
 }

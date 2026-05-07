@@ -155,7 +155,7 @@ pub(crate) fn tait_hidden_types(
                     _ = ocx.eq(
                         &cause,
                         param_env,
-                        entry.get().get().instantiate_identity(),
+                        entry.get().get().instantiate_identity().skip_norm_wip(),
                         hidden_type,
                     );
                 }

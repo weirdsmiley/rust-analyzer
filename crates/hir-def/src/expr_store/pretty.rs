@@ -8,6 +8,7 @@ use std::{
 
 use hir_expand::{Lookup, mod_path::PathKind};
 use itertools::Itertools;
+use rustc_abi::ExternAbi;
 use span::Edition;
 use stdx::never;
 use syntax::ast::{HasName, RangeOp};
@@ -292,7 +293,7 @@ pub fn print_function(
     if flags.contains(FnFlags::EXPLICIT_SAFE) {
         w!(p, "safe ");
     }
-    if let Some(abi) = abi {
+    if *abi != ExternAbi::Rust {
         w!(p, "extern \"{}\" ", abi.as_str());
     }
     w!(p, "fn ");
@@ -1315,9 +1316,9 @@ impl Printer<'_> {
                 if fn_.is_unsafe {
                     w!(self, "unsafe ");
                 }
-                if let Some(abi) = &fn_.abi {
+                if fn_.abi != ExternAbi::Rust {
                     w!(self, "extern ");
-                    w!(self, "{}", abi.as_str());
+                    w!(self, "{}", fn_.abi.as_str());
                     w!(self, " ");
                 }
                 w!(self, "fn(");

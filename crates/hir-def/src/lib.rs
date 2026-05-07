@@ -47,8 +47,9 @@ pub mod find_path;
 pub mod import_map;
 pub mod visibility;
 
-use intern::{Interned, Symbol};
+use intern::Interned;
 pub use rustc_abi as layout;
+use rustc_abi::ExternAbi;
 use thin_vec::ThinVec;
 
 pub use crate::signatures::LocalFieldId;
@@ -360,10 +361,8 @@ impl_intern!(ExternCrateId, ExternCrateLoc, intern_extern_crate, lookup_intern_e
 type ExternBlockLoc = ItemLoc<ast::ExternBlock>;
 impl_intern!(ExternBlockId, ExternBlockLoc, intern_extern_block, lookup_intern_extern_block);
 
-#[salsa::tracked]
 impl ExternBlockId {
-    #[salsa::tracked]
-    pub fn abi(self, db: &dyn DefDatabase) -> Option<Symbol> {
+    pub fn abi(self, db: &dyn DefDatabase) -> ExternAbi {
         signatures::extern_block_abi(db, self)
     }
 }

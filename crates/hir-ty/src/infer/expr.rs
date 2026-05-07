@@ -823,7 +823,8 @@ impl<'db> InferenceContext<'_, 'db> {
                                     this.interner(),
                                     this.interner()
                                         .fn_sig(def)
-                                        .instantiate(this.interner(), parameters),
+                                        .instantiate(this.interner(), parameters)
+                                        .skip_norm_wip(),
                                 );
                                 _ = this.coerce(
                                     expr,
@@ -1042,14 +1043,14 @@ impl<'db> InferenceContext<'_, 'db> {
                     });
                 }
 
-                variant_field_tys[i].get().instantiate(interner, args)
+                variant_field_tys[i].get().instantiate(interner, args).skip_norm_wip()
             } else {
                 if let Some(field_idx) = seen_fields.get(&name) {
                     self.push_diagnostic(InferenceDiagnostic::DuplicateField {
                         field: field.expr.into(),
                         variant,
                     });
-                    variant_field_tys[*field_idx].get().instantiate(interner, args)
+                    variant_field_tys[*field_idx].get().instantiate(interner, args).skip_norm_wip()
                 } else {
                     self.push_diagnostic(InferenceDiagnostic::NoSuchField {
                         field: field.expr.into(),
@@ -1106,10 +1107,13 @@ impl<'db> InferenceContext<'_, 'db> {
                         for (field_idx, field) in variant_fields.fields().iter() {
                             let fru_ty = variant_field_tys[field_idx]
                                 .get()
-                                .instantiate(interner, fresh_args);
+                                .instantiate(interner, fresh_args)
+                                .skip_norm_wip();
                             if remaining_fields.remove(&field.name).is_some() {
-                                let target_ty =
-                                    variant_field_tys[field_idx].get().instantiate(interner, args);
+                                let target_ty = variant_field_tys[field_idx]
+                                    .get()
+                                    .instantiate(interner, args)
+                                    .skip_norm_wip();
                                 let cause = ObligationCause::new(expr);
                                 match self.table.at(&cause).sup(target_ty, fru_ty) {
                                     Ok(InferOk { obligations, value: () }) => {
@@ -1647,7 +1651,8 @@ impl<'db> InferenceContext<'_, 'db> {
             }
             let ty = self.db.field_types(field_id.parent)[field_id.local_id]
                 .get()
-                .instantiate(interner, parameters);
+                .instantiate(interner, parameters)
+                .skip_norm_wip();
             Some((Either::Left(field_id), ty))
         });
 
@@ -1665,7 +1670,8 @@ impl<'db> InferenceContext<'_, 'db> {
                     self.table.register_infer_ok(autoderef.adjust_steps_as_infer_ok());
                 let ty = self.db.field_types(field_id.parent)[field_id.local_id]
                     .get()
-                    .instantiate(self.interner(), subst);
+                    .instantiate(self.interner(), subst)
+                    .skip_norm_wip();
                 let ty = self.process_remote_user_written_ty(ty);
 
                 (ty, Either::Left(field_id), adjustments, false)
@@ -1733,7 +1739,11 @@ impl<'db> InferenceContext<'_, 'db> {
         // FIXME: Using fresh infer vars for the method args isn't optimal,
         // we can do better by going thorough the full probe/confirm machinery.
         let args = self.table.fresh_args_for_item(Span::Dummy, def_id.into());
-        let sig = self.db.callable_item_signature(def_id.into()).instantiate(self.interner(), args);
+        let sig = self
+            .db
+            .callable_item_signature(def_id.into())
+            .instantiate(self.interner(), args)
+            .skip_norm_wip();
         let sig = self.infcx().instantiate_binder_with_fresh_vars(
             Span::Dummy,
             BoundRegionConversionTime::FnCall,
@@ -1909,7 +1919,7 @@ impl<'db> InferenceContext<'_, 'db> {
             expected,
             args,
             &[],
-            sig.c_variadic,
+            sig.c_variadic(),
             TupleArgumentsFlag::DontTupleArguments,
         );
         ret_ty

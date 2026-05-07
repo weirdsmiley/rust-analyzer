@@ -39,6 +39,7 @@ pub use interner::*;
 pub use opaques::*;
 pub use predicate::*;
 pub use region::*;
+use rustc_type_ir::MayBeErased;
 pub use solver::*;
 pub use ty::*;
 
@@ -48,6 +49,7 @@ pub use rustc_ast_ir::Mutability;
 
 pub type Binder<'db, T> = rustc_type_ir::Binder<DbInterner<'db>, T>;
 pub type EarlyBinder<'db, T> = rustc_type_ir::EarlyBinder<DbInterner<'db>, T>;
+pub type Unnormalized<'db, T> = rustc_type_ir::Unnormalized<DbInterner<'db>, T>;
 pub type Canonical<'db, T> = rustc_type_ir::Canonical<DbInterner<'db>, T>;
 pub type CanonicalVarValues<'db> = rustc_type_ir::CanonicalVarValues<DbInterner<'db>>;
 pub type CanonicalVarKind<'db> = rustc_type_ir::CanonicalVarKind<DbInterner<'db>>;
@@ -55,7 +57,7 @@ pub type CanonicalQueryInput<'db, V> = rustc_type_ir::CanonicalQueryInput<DbInte
 pub type AliasTy<'db> = rustc_type_ir::AliasTy<DbInterner<'db>>;
 pub type FnSig<'db> = rustc_type_ir::FnSig<DbInterner<'db>>;
 pub type PolyFnSig<'db> = Binder<'db, rustc_type_ir::FnSig<DbInterner<'db>>>;
-pub type TypingMode<'db> = rustc_type_ir::TypingMode<DbInterner<'db>>;
+pub type TypingMode<'db, S = MayBeErased> = rustc_type_ir::TypingMode<DbInterner<'db>, S>;
 pub type TypeError<'db> = rustc_type_ir::error::TypeError<DbInterner<'db>>;
 pub type QueryResult<'db> = rustc_type_ir::solve::QueryResult<DbInterner<'db>>;
 pub type FxIndexMap<K, V> = rustc_type_ir::data_structures::IndexMap<K, V>;
