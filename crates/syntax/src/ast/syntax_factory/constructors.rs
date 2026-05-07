@@ -663,6 +663,10 @@ impl SyntaxFactory {
         ast
     }
 
+    pub fn use_tree_glob(&self) -> ast::UseTree {
+        make::use_tree_glob().clone_for_update()
+    }
+
     pub fn path_unqualified(&self, segment: ast::PathSegment) -> ast::Path {
         let ast = make::path_unqualified(segment.clone()).clone_for_update();
 

@@ -147,6 +147,35 @@ impl ast::UseTree {
         }
     }
 
+    /// Editor variant of `split_prefix`
+    pub fn split_prefix_with_editor(&self, editor: &SyntaxEditor, prefix: &ast::Path) {
+        debug_assert_eq!(self.path(), Some(prefix.top_path()));
+
+        let make = editor.make();
+        let path = self.path().unwrap();
+        let suffix = if path == *prefix && self.use_tree_list().is_none() {
+            if self.star_token().is_some() {
+                make.use_tree_glob()
+            } else {
+                let self_path = make.path_unqualified(make.path_segment_self());
+                make.use_tree(self_path, None, None, false)
+            }
+        } else {
+            let suffix_segments = path.segments().skip(prefix.segments().count());
+            let suffix_path = make.path_from_segments(suffix_segments, false);
+            make.use_tree(
+                suffix_path,
+                self.use_tree_list(),
+                self.rename(),
+                self.star_token().is_some(),
+            )
+        };
+        let use_tree_list = make.use_tree_list(once(suffix));
+        let new_use_tree = make.use_tree(prefix.clone(), Some(use_tree_list), None, false);
+
+        editor.replace(self.syntax(), new_use_tree.syntax());
+    }
+
     /// Wraps the use tree in use tree list with no top level path (if it isn't already).
     ///
     /// # Examples
