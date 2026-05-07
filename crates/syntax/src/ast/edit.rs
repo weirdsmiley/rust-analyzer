@@ -14,7 +14,6 @@ use crate::{
     SyntaxNode, SyntaxToken,
     ast::{self, AstNode, HasName, make},
     syntax_editor::{Position, SyntaxEditor, SyntaxMappingBuilder},
-    ted,
 };
 
 use super::syntax_factory::SyntaxFactory;
@@ -88,29 +87,6 @@ impl IndentLevel {
         IndentLevel(0)
     }
 
-    /// XXX: this intentionally doesn't change the indent of the very first token.
-    /// For example, in something like:
-    /// ```
-    /// fn foo() -> i32 {
-    ///    92
-    /// }
-    /// ```
-    /// if you indent the block, the `{` token would stay put.
-    pub(super) fn increase_indent(self, node: &SyntaxNode) {
-        let tokens = node.preorder_with_tokens().filter_map(|event| match event {
-            rowan::WalkEvent::Leave(NodeOrToken::Token(it)) => Some(it),
-            _ => None,
-        });
-        for token in tokens {
-            if let Some(ws) = ast::Whitespace::cast(token)
-                && ws.text().contains('\n')
-            {
-                let new_ws = make::tokens::whitespace(&format!("{}{self}", ws.syntax()));
-                ted::replace(ws.syntax(), &new_ws);
-            }
-        }
-    }
-
     pub(super) fn clone_increase_indent(self, node: &SyntaxNode) -> SyntaxNode {
         let (editor, node) = SyntaxEditor::new(node.clone());
         let tokens = node
@@ -126,23 +102,6 @@ impl IndentLevel {
             editor.replace(ws.syntax(), &new_ws);
         }
         editor.finish().new_root().clone()
-    }
-
-    pub(super) fn decrease_indent(self, node: &SyntaxNode) {
-        let tokens = node.preorder_with_tokens().filter_map(|event| match event {
-            rowan::WalkEvent::Leave(NodeOrToken::Token(it)) => Some(it),
-            _ => None,
-        });
-        for token in tokens {
-            if let Some(ws) = ast::Whitespace::cast(token)
-                && ws.text().contains('\n')
-            {
-                let new_ws = make::tokens::whitespace(
-                    &ws.syntax().text().replace(&format!("\n{self}"), "\n"),
-                );
-                ted::replace(ws.syntax(), &new_ws);
-            }
-        }
     }
 
     pub(super) fn clone_decrease_indent(self, node: &SyntaxNode) -> SyntaxNode {
