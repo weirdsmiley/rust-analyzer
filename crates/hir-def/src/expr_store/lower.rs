@@ -18,6 +18,7 @@ use hir_expand::{
     span_map::SpanMap,
 };
 use intern::{Symbol, sym};
+use rustc_abi::ExternAbi;
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 use stdx::never;
@@ -683,15 +684,13 @@ impl<'db> ExprCollector<'db> {
                 } else {
                     Vec::with_capacity(1)
                 };
-                fn lower_abi(abi: ast::Abi) -> Symbol {
-                    match abi.abi_string() {
-                        Some(tok) => Symbol::intern(tok.text_without_quotes()),
-                        // `extern` default to be `extern "C"`.
-                        _ => sym::C,
-                    }
+                fn lower_abi(abi: ast::Abi) -> ExternAbi {
+                    abi.abi_string()
+                        .and_then(|abi| abi.text_without_quotes().parse().ok())
+                        .unwrap_or(ExternAbi::FALLBACK)
                 }
 
-                let abi = inner.abi().map(lower_abi);
+                let abi = inner.abi().map(lower_abi).unwrap_or(ExternAbi::Rust);
                 params.push((None, ret_ty));
                 TypeRef::Fn(Box::new(FnType {
                     is_varargs,

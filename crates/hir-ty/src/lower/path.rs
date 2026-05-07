@@ -34,8 +34,8 @@ use crate::{
         LifetimeElisionKind, PathDiagnosticCallbackData, const_param_ty,
     },
     next_solver::{
-        Binder, Clause, Const, DbInterner, EarlyBinder, ErrorGuaranteed, GenericArg, GenericArgs,
-        Predicate, ProjectionPredicate, Region, TraitRef, Ty,
+        AliasTermKind, Binder, Clause, Const, DbInterner, EarlyBinder, ErrorGuaranteed, GenericArg,
+        GenericArgs, Predicate, ProjectionPredicate, Region, TraitRef, Ty,
     },
 };
 
@@ -498,7 +498,7 @@ impl<'a, 'b, 'db> PathLoweringContext<'a, 'b, 'db> {
                 let Some(impl_trait) = db.impl_trait(impl_) else {
                     return error_ty();
                 };
-                let impl_trait = impl_trait.instantiate_identity();
+                let impl_trait = impl_trait.instantiate_identity().skip_norm_wip();
                 // Searching for `Self::Assoc` in `impl Trait for Type` is like searching for `Self::Assoc` in `Trait`.
                 let AssocTypeShorthandResolution::Resolved(assoc_type) =
                     super::resolve_type_param_assoc_type_shorthand(
@@ -514,7 +514,12 @@ impl<'a, 'b, 'db> PathLoweringContext<'a, 'b, 'db> {
                 let (assoc_type, trait_args) = assoc_type
                     .get_with(|(assoc_type, trait_args)| (*assoc_type, trait_args.as_ref()))
                     .skip_binder();
-                (assoc_type, EarlyBinder::bind(trait_args).instantiate(interner, impl_trait.args))
+                (
+                    assoc_type,
+                    EarlyBinder::bind(trait_args)
+                        .instantiate(interner, impl_trait.args)
+                        .skip_norm_wip(),
+                )
             }
             _ => return error_ty(),
         };
@@ -543,7 +548,7 @@ impl<'a, 'b, 'db> PathLoweringContext<'a, 'b, 'db> {
         };
         let args = self.substs_from_path_segment(generic_def, infer_args, None, false);
         let ty = ty_query(self.ctx.db, typeable);
-        ty.instantiate(self.ctx.interner, args)
+        ty.instantiate(self.ctx.interner, args).skip_norm_wip()
     }
 
     /// Collect generic arguments from a path into a `Substs`. See also
@@ -749,12 +754,11 @@ impl<'a, 'b, 'db> PathLoweringContext<'a, 'b, 'db> {
                 infer_args: bool,
                 preceding_args: &[GenericArg<'db>],
             ) -> GenericArg<'db> {
-                let default =
-                    || {
-                        self.ctx.ctx.db.generic_defaults(def).get(preceding_args.len()).map(
-                            |default| default.instantiate(self.ctx.ctx.interner, preceding_args),
-                        )
-                    };
+                let default = || {
+                    self.ctx.ctx.db.generic_defaults(def).get(preceding_args.len()).map(|default| {
+                        default.instantiate(self.ctx.ctx.interner, preceding_args).skip_norm_wip()
+                    })
+                };
                 match param {
                     GenericParamDataRef::LifetimeParamData(_) => {
                         Region::new(self.ctx.ctx.interner, rustc_type_ir::ReError(ErrorGuaranteed))
@@ -902,8 +906,11 @@ impl<'a, 'b, 'db> PathLoweringContext<'a, 'b, 'db> {
                     interner,
                     super_trait_args.iter().chain(args.iter().skip(super_trait_args.len())),
                 );
-                let projection_term =
-                    AliasTerm::new_from_args(interner, associated_ty.into(), args);
+                let projection_term = AliasTerm::new_from_args(
+                    interner,
+                    AliasTermKind::ProjectionTy { def_id: associated_ty.into() },
+                    args,
+                );
                 let mut predicates: SmallVec<[_; 1]> = SmallVec::with_capacity(
                     binding.type_ref.as_ref().map_or(0, |_| 1) + binding.bounds.len(),
                 );

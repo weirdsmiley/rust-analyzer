@@ -2,8 +2,8 @@
 //! be directly created from an ast::TypeRef, without further queries.
 
 use hir_expand::name::Name;
-use intern::Symbol;
 use la_arena::Idx;
+use rustc_abi::ExternAbi;
 use thin_vec::ThinVec;
 
 use crate::{
@@ -100,7 +100,7 @@ pub struct FnType {
     pub params: Box<[(Option<Name>, TypeRefId)]>,
     pub is_varargs: bool,
     pub is_unsafe: bool,
-    pub abi: Option<Symbol>,
+    pub abi: ExternAbi,
 }
 
 impl FnType {

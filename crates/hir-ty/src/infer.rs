@@ -204,7 +204,7 @@ fn infer_anon_const_query(db: &dyn HirDatabase, def: AnonConstId) -> InferenceRe
 
     ctx.infer_expr(
         loc.expr,
-        &Expectation::has_type(loc.ty.get().instantiate_identity()),
+        &Expectation::has_type(loc.ty.get().instantiate_identity().skip_norm_wip()),
         ExprIsRead::Yes,
     );
 
@@ -2006,7 +2006,7 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
                             .map(|it| it.get())
                         {
                             Some(field) => {
-                                ty = field.instantiate(self.interner(), substs);
+                                ty = field.instantiate(self.interner(), substs).skip_norm_wip();
                             }
                             None => break,
                         }
@@ -2197,7 +2197,7 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
 
             if let Some(TypeNs::SelfType(impl_)) = type_ns
                 && let Some(trait_ref) = self.db.impl_trait(impl_)
-                && let trait_ref = trait_ref.instantiate_identity()
+                && let trait_ref = trait_ref.instantiate_identity().skip_norm_wip()
                 && let Some(assoc_type) = trait_ref
                     .def_id
                     .0
@@ -2262,14 +2262,16 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
                         let ty = self
                             .db
                             .ty(var.lookup(self.db).parent.into())
-                            .instantiate(interner, args);
+                            .instantiate(interner, args)
+                            .skip_norm_wip();
                         let ty = self.insert_type_vars(ty, Span::Dummy);
                         return (ty, Some(var.into()));
                     }
                     ValueNs::StructId(strukt) => {
                         let args = path_ctx.substs_from_path(strukt.into(), true, false);
                         drop(ctx);
-                        let ty = self.db.ty(strukt.into()).instantiate(interner, args);
+                        let ty =
+                            self.db.ty(strukt.into()).instantiate(interner, args).skip_norm_wip();
                         let ty = self.insert_type_vars(ty, Span::Dummy);
                         return (ty, Some(strukt.into()));
                     }
@@ -2291,26 +2293,30 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
             TypeNs::AdtId(AdtId::StructId(strukt)) => {
                 let args = path_ctx.substs_from_path(strukt.into(), true, false);
                 drop(ctx);
-                let ty = self.db.ty(strukt.into()).instantiate(interner, args);
+                let ty = self.db.ty(strukt.into()).instantiate(interner, args).skip_norm_wip();
                 let ty = self.insert_type_vars(ty, Span::Dummy);
                 forbid_unresolved_segments(self, (ty, Some(strukt.into())), unresolved)
             }
             TypeNs::AdtId(AdtId::UnionId(u)) => {
                 let args = path_ctx.substs_from_path(u.into(), true, false);
                 drop(ctx);
-                let ty = self.db.ty(u.into()).instantiate(interner, args);
+                let ty = self.db.ty(u.into()).instantiate(interner, args).skip_norm_wip();
                 let ty = self.insert_type_vars(ty, Span::Dummy);
                 forbid_unresolved_segments(self, (ty, Some(u.into())), unresolved)
             }
             TypeNs::EnumVariantId(var) => {
                 let args = path_ctx.substs_from_path(var.into(), true, false);
                 drop(ctx);
-                let ty = self.db.ty(var.lookup(self.db).parent.into()).instantiate(interner, args);
+                let ty = self
+                    .db
+                    .ty(var.lookup(self.db).parent.into())
+                    .instantiate(interner, args)
+                    .skip_norm_wip();
                 let ty = self.insert_type_vars(ty, Span::Dummy);
                 forbid_unresolved_segments(self, (ty, Some(var.into())), unresolved)
             }
             TypeNs::SelfType(impl_id) => {
-                let mut ty = self.db.impl_self_ty(impl_id).instantiate_identity();
+                let mut ty = self.db.impl_self_ty(impl_id).instantiate_identity().skip_norm_wip();
 
                 let Some(remaining_idx) = unresolved else {
                     drop(ctx);
@@ -2428,7 +2434,7 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
                 let args = path_ctx.substs_from_path_segment(it.into(), true, None, false);
                 drop(ctx);
                 let interner = DbInterner::conjure();
-                let ty = self.db.ty(it.into()).instantiate(interner, args);
+                let ty = self.db.ty(it.into()).instantiate(interner, args).skip_norm_wip();
                 let ty = self.insert_type_vars(ty, Span::Dummy);
 
                 self.resolve_variant_on_alias(node, ty, unresolved, mod_path)

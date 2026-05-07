@@ -27,7 +27,7 @@ use crate::{
     next_solver::{
         Binder, Clause, ClauseKind, Const, DbInterner, EarlyParamRegion, ErrorGuaranteed, FnSig,
         GenericArg, GenericArgs, ParamConst, PolyExistentialTraitRef, PolyTraitRef, Region,
-        TraitRef, Ty, TyKind,
+        TraitRef, Ty, TyKind, Unnormalized,
         infer::{
             BoundRegionConversionTime, InferCtxt,
             traits::{ObligationCause, PredicateObligation},
@@ -137,7 +137,8 @@ impl<'a, 'b, 'db> ConfirmContext<'a, 'b, 'db> {
         );
         let illegal_sized_bound = self.predicates_require_illegal_sized_bound(
             GenericPredicates::query_all(self.db(), self.candidate.into())
-                .iter_instantiated(self.interner(), filler_args.as_slice()),
+                .iter_instantiated(self.interner(), filler_args.as_slice())
+                .map(Unnormalized::skip_norm_wip),
         );
 
         // Unify the (adjusted) self type with what the method expects.
@@ -512,13 +513,17 @@ impl<'a, 'b, 'db> ConfirmContext<'a, 'b, 'db> {
         let def_id = self.candidate;
         let method_predicates = clauses_as_obligations(
             GenericPredicates::query_all(self.db(), def_id.into())
-                .iter_instantiated(self.interner(), all_args),
+                .iter_instantiated(self.interner(), all_args)
+                .map(Unnormalized::skip_norm_wip),
             ObligationCause::new(self.call_expr),
             self.ctx.table.param_env,
         );
 
-        let sig =
-            self.db().callable_item_signature(def_id.into()).instantiate(self.interner(), all_args);
+        let sig = self
+            .db()
+            .callable_item_signature(def_id.into())
+            .instantiate(self.interner(), all_args)
+            .skip_norm_wip();
         debug!("type scheme instantiated, sig={:?}", sig);
 
         let sig = self.instantiate_binder_with_fresh_vars(sig);

@@ -4,7 +4,7 @@
 use std::cmp::{self, Ordering};
 
 use hir_def::{attrs::AttrFlags, signatures::FunctionSignature};
-use intern::sym;
+use rustc_abi::ExternAbi;
 use rustc_type_ir::inherent::{GenericArgs as _, IntoKind, SliceLike, Ty as _};
 use stdx::never;
 
@@ -59,7 +59,9 @@ impl<'a, 'db: 'a> Evaluator<'a, 'db> {
             );
         }
         let is_extern_c = match def.lookup(self.db).container {
-            hir_def::ItemContainerId::ExternBlockId(block) => block.abi(self.db) == Some(sym::C),
+            hir_def::ItemContainerId::ExternBlockId(block) => {
+                matches!(block.abi(self.db), ExternAbi::C { .. })
+            }
             _ => false,
         };
         if is_extern_c {
@@ -1368,7 +1370,8 @@ impl<'a, 'db: 'a> Evaluator<'a, 'db> {
                     .unwrap()
                     .1
                     .get()
-                    .instantiate(self.interner(), subst);
+                    .instantiate(self.interner(), subst)
+                    .skip_norm_wip();
                 let sized_part_size =
                     layout.fields.offset(field_types.iter().count() - 1).bytes_usize();
                 let sized_part_align = layout.align.bytes() as usize;

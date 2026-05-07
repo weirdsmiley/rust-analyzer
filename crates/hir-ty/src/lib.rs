@@ -73,9 +73,9 @@ use hir_def::{
 };
 use hir_expand::name::Name;
 use indexmap::{IndexMap, map::Entry};
-use intern::{Symbol, sym};
 use macros::GenericTypeVisitable;
 use mir::{MirEvalError, VTableMap};
+use rustc_abi::ExternAbi;
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use rustc_type_ir::{
     BoundVarIndexKind, TypeSuperVisitable, TypeVisitableExt,
@@ -220,137 +220,6 @@ pub fn type_or_const_param_idx(db: &dyn HirDatabase, id: TypeOrConstParamId) -> 
 
 pub fn lifetime_param_idx(db: &dyn HirDatabase, id: LifetimeParamId) -> u32 {
     generics::generics(db, id.parent).lifetime_param_idx(id)
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub enum FnAbi {
-    Aapcs,
-    AapcsUnwind,
-    AvrInterrupt,
-    AvrNonBlockingInterrupt,
-    C,
-    CCmseNonsecureCall,
-    CCmseNonsecureEntry,
-    CDecl,
-    CDeclUnwind,
-    CUnwind,
-    Efiapi,
-    Fastcall,
-    FastcallUnwind,
-    Msp430Interrupt,
-    PtxKernel,
-    RiscvInterruptM,
-    RiscvInterruptS,
-    Rust,
-    RustCall,
-    RustCold,
-    RustIntrinsic,
-    Stdcall,
-    StdcallUnwind,
-    System,
-    SystemUnwind,
-    Sysv64,
-    Sysv64Unwind,
-    Thiscall,
-    ThiscallUnwind,
-    Unadjusted,
-    Vectorcall,
-    VectorcallUnwind,
-    Wasm,
-    Win64,
-    Win64Unwind,
-    X86Interrupt,
-    RustPreserveNone,
-    Unknown,
-}
-
-impl FnAbi {
-    #[rustfmt::skip]
-    pub fn from_symbol(s: &Symbol) -> FnAbi {
-        match s {
-            s if *s == sym::aapcs_dash_unwind => FnAbi::AapcsUnwind,
-            s if *s == sym::aapcs => FnAbi::Aapcs,
-            s if *s == sym::avr_dash_interrupt => FnAbi::AvrInterrupt,
-            s if *s == sym::avr_dash_non_dash_blocking_dash_interrupt => FnAbi::AvrNonBlockingInterrupt,
-            s if *s == sym::C_dash_cmse_dash_nonsecure_dash_call => FnAbi::CCmseNonsecureCall,
-            s if *s == sym::C_dash_cmse_dash_nonsecure_dash_entry => FnAbi::CCmseNonsecureEntry,
-            s if *s == sym::C_dash_unwind => FnAbi::CUnwind,
-            s if *s == sym::C => FnAbi::C,
-            s if *s == sym::cdecl_dash_unwind => FnAbi::CDeclUnwind,
-            s if *s == sym::cdecl => FnAbi::CDecl,
-            s if *s == sym::efiapi => FnAbi::Efiapi,
-            s if *s == sym::fastcall_dash_unwind => FnAbi::FastcallUnwind,
-            s if *s == sym::fastcall => FnAbi::Fastcall,
-            s if *s == sym::msp430_dash_interrupt => FnAbi::Msp430Interrupt,
-            s if *s == sym::ptx_dash_kernel => FnAbi::PtxKernel,
-            s if *s == sym::riscv_dash_interrupt_dash_m => FnAbi::RiscvInterruptM,
-            s if *s == sym::riscv_dash_interrupt_dash_s => FnAbi::RiscvInterruptS,
-            s if *s == sym::rust_dash_call => FnAbi::RustCall,
-            s if *s == sym::rust_dash_cold => FnAbi::RustCold,
-            s if *s == sym::rust_dash_preserve_dash_none => FnAbi::RustPreserveNone,
-            s if *s == sym::rust_dash_intrinsic => FnAbi::RustIntrinsic,
-            s if *s == sym::Rust => FnAbi::Rust,
-            s if *s == sym::stdcall_dash_unwind => FnAbi::StdcallUnwind,
-            s if *s == sym::stdcall => FnAbi::Stdcall,
-            s if *s == sym::system_dash_unwind => FnAbi::SystemUnwind,
-            s if *s == sym::system => FnAbi::System,
-            s if *s == sym::sysv64_dash_unwind => FnAbi::Sysv64Unwind,
-            s if *s == sym::sysv64 => FnAbi::Sysv64,
-            s if *s == sym::thiscall_dash_unwind => FnAbi::ThiscallUnwind,
-            s if *s == sym::thiscall => FnAbi::Thiscall,
-            s if *s == sym::unadjusted => FnAbi::Unadjusted,
-            s if *s == sym::vectorcall_dash_unwind => FnAbi::VectorcallUnwind,
-            s if *s == sym::vectorcall => FnAbi::Vectorcall,
-            s if *s == sym::wasm => FnAbi::Wasm,
-            s if *s == sym::win64_dash_unwind => FnAbi::Win64Unwind,
-            s if *s == sym::win64 => FnAbi::Win64,
-            s if *s == sym::x86_dash_interrupt => FnAbi::X86Interrupt,
-            _ => FnAbi::Unknown,
-        }
-    }
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            FnAbi::Aapcs => "aapcs",
-            FnAbi::AapcsUnwind => "aapcs-unwind",
-            FnAbi::AvrInterrupt => "avr-interrupt",
-            FnAbi::AvrNonBlockingInterrupt => "avr-non-blocking-interrupt",
-            FnAbi::C => "C",
-            FnAbi::CCmseNonsecureCall => "C-cmse-nonsecure-call",
-            FnAbi::CCmseNonsecureEntry => "C-cmse-nonsecure-entry",
-            FnAbi::CDecl => "C-decl",
-            FnAbi::CDeclUnwind => "cdecl-unwind",
-            FnAbi::CUnwind => "C-unwind",
-            FnAbi::Efiapi => "efiapi",
-            FnAbi::Fastcall => "fastcall",
-            FnAbi::FastcallUnwind => "fastcall-unwind",
-            FnAbi::Msp430Interrupt => "msp430-interrupt",
-            FnAbi::PtxKernel => "ptx-kernel",
-            FnAbi::RiscvInterruptM => "riscv-interrupt-m",
-            FnAbi::RiscvInterruptS => "riscv-interrupt-s",
-            FnAbi::Rust => "Rust",
-            FnAbi::RustCall => "rust-call",
-            FnAbi::RustCold => "rust-cold",
-            FnAbi::RustPreserveNone => "rust-preserve-none",
-            FnAbi::RustIntrinsic => "rust-intrinsic",
-            FnAbi::Stdcall => "stdcall",
-            FnAbi::StdcallUnwind => "stdcall-unwind",
-            FnAbi::System => "system",
-            FnAbi::SystemUnwind => "system-unwind",
-            FnAbi::Sysv64 => "sysv64",
-            FnAbi::Sysv64Unwind => "sysv64-unwind",
-            FnAbi::Thiscall => "thiscall",
-            FnAbi::ThiscallUnwind => "thiscall-unwind",
-            FnAbi::Unadjusted => "unadjusted",
-            FnAbi::Vectorcall => "vectorcall",
-            FnAbi::VectorcallUnwind => "vectorcall-unwind",
-            FnAbi::Wasm => "wasm",
-            FnAbi::Win64 => "win64",
-            FnAbi::Win64Unwind => "win64-unwind",
-            FnAbi::X86Interrupt => "x86-interrupt",
-            FnAbi::Unknown => "unknown-abi",
-        }
-    }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
@@ -594,7 +463,7 @@ pub fn callable_sig_from_fn_trait<'db>(
         ret,
         false,
         Safety::Safe,
-        FnAbi::Rust,
+        ExternAbi::Rust,
     ));
     Some((trait_, sig))
 }

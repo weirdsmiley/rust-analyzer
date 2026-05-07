@@ -169,7 +169,7 @@ impl<'a, 'db> UninhabitedFrom<'a, 'db> {
         subst: GenericArgs<'db>,
     ) -> ControlFlow<VisiblyUninhabited> {
         if vis.is_none_or(|it| it.is_visible_from(self.db(), self.target_mod)) {
-            let ty = ty.instantiate(self.interner(), subst);
+            let ty = ty.instantiate(self.interner(), subst).skip_norm_wip();
             ty.visit_with(self)
         } else {
             CONTINUE_OPAQUELY_INHABITED

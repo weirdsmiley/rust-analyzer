@@ -519,7 +519,7 @@ impl<'db> SourceAnalyzer<'db> {
         let expr_id = self.expr_id(call.clone().into())?.as_expr()?;
         let (func, args) = self.infer()?.method_resolution(expr_id)?;
         let interner = DbInterner::new_no_crate(db);
-        let ty = db.value_ty(func.into())?.instantiate(interner, args);
+        let ty = db.value_ty(func.into())?.instantiate(interner, args).skip_norm_wip();
         let ty = Type::new_with_resolver(db, &self.resolver, ty);
         let mut res = ty.as_callable(db)?;
         res.is_bound_method = true;
@@ -868,8 +868,10 @@ impl<'db> SourceAnalyzer<'db> {
         let variant = self.infer()?.variant_resolution_for_expr_or_pat(expr_id)?;
         let variant_data = variant.fields(db);
         let field = FieldId { parent: variant, local_id: variant_data.field(&local_name)? };
-        let field_ty =
-            (*db.field_types(variant).get(field.local_id)?).get().instantiate(interner, subst);
+        let field_ty = (*db.field_types(variant).get(field.local_id)?)
+            .get()
+            .instantiate(interner, subst)
+            .skip_norm_wip();
         Some((
             field.into(),
             local,
@@ -891,8 +893,10 @@ impl<'db> SourceAnalyzer<'db> {
         let variant_data = variant.fields(db);
         let field = FieldId { parent: variant, local_id: variant_data.field(&field_name)? };
         let (adt, subst) = self.infer()?.pat_ty(pat_id.as_pat()?).as_adt()?;
-        let field_ty =
-            (*db.field_types(variant).get(field.local_id)?).get().instantiate(interner, subst);
+        let field_ty = (*db.field_types(variant).get(field.local_id)?)
+            .get()
+            .instantiate(interner, subst)
+            .skip_norm_wip();
         Some((
             field.into(),
             Type::new_with_resolver(db, &self.resolver, field_ty),
@@ -961,24 +965,25 @@ impl<'db> SourceAnalyzer<'db> {
             if let Either::Right(container) = &mut container {
                 *container = structurally_normalize_ty(&infcx, *container, trait_env.param_env);
             }
-            let handle_variants = |variant: VariantId,
-                                   subst: GenericArgs<'db>,
-                                   container: &mut _| {
-                let fields = variant.fields(db);
-                let field = fields.field(&field_name.as_name())?;
-                let field_types = db.field_types(variant);
-                *container = Either::Right(field_types[field].get().instantiate(interner, subst));
-                let generic_def = match variant {
-                    VariantId::EnumVariantId(it) => it.loc(db).parent.into(),
-                    VariantId::StructId(it) => it.into(),
-                    VariantId::UnionId(it) => it.into(),
+            let handle_variants =
+                |variant: VariantId, subst: GenericArgs<'db>, container: &mut _| {
+                    let fields = variant.fields(db);
+                    let field = fields.field(&field_name.as_name())?;
+                    let field_types = db.field_types(variant);
+                    *container = Either::Right(
+                        field_types[field].get().instantiate(interner, subst).skip_norm_wip(),
+                    );
+                    let generic_def = match variant {
+                        VariantId::EnumVariantId(it) => it.loc(db).parent.into(),
+                        VariantId::StructId(it) => it.into(),
+                        VariantId::UnionId(it) => it.into(),
+                    };
+                    Some((
+                        Either::Right(Field { parent: variant.into(), id: field }),
+                        generic_def,
+                        subst,
+                    ))
                 };
-                Some((
-                    Either::Right(Field { parent: variant.into(), id: field }),
-                    generic_def,
-                    subst,
-                ))
-            };
             let temp_ty = Ty::new_error(interner, ErrorGuaranteed);
             let (field_def, generic_def, subst) =
                 match std::mem::replace(&mut container, Either::Right(temp_ty)) {
@@ -1322,7 +1327,7 @@ impl<'db> SourceAnalyzer<'db> {
                         args,
                         ..
                     }) => {
-                        let assoc_id = def_id.expect_type_alias();
+                        let assoc_id = def_id.0;
                         (
                             GenericSubstitution::new(assoc_id.into(), args, env),
                             PathResolution::Def(ModuleDef::TypeAlias(assoc_id.into())),
@@ -1453,7 +1458,7 @@ impl<'db> SourceAnalyzer<'db> {
             .into_iter()
             .map(|local_id| {
                 let field = FieldId { parent: variant, local_id };
-                let ty = field_types[local_id].get().instantiate(interner, substs);
+                let ty = field_types[local_id].get().instantiate(interner, substs).skip_norm_wip();
                 (field.into(), Type::new_with_resolver_inner(db, &self.resolver, ty))
             })
             .collect()

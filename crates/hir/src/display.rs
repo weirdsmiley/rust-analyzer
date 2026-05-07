@@ -7,6 +7,7 @@ use hir_def::{
     expr_store::{Body, ExpressionStore},
     hir::generics::{GenericParams, TypeOrConstParamData, TypeParamProvenance, WherePredicate},
     item_tree::FieldsShape,
+    layout::ExternAbi,
     signatures::{
         ConstSignature, FunctionSignature, ImplSignature, StaticFlags, StaticSignature, TraitFlags,
         TraitSignature, TypeAliasSignature,
@@ -22,10 +23,10 @@ use hir_ty::{
         hir_display_with_store, write_bounds_like_dyn_trait_with_prefix, write_params_bounds,
         write_visibility,
     },
-    next_solver::ClauseKind,
+    next_solver::{ClauseKind, Unnormalized},
 };
 use itertools::Itertools;
-use rustc_type_ir::inherent::IntoKind;
+use rustc_type_ir::inherent::IntoKind as _;
 
 use crate::{
     Adt, AnyFunctionId, AsAssocItem, AssocItem, AssocItemContainer, Const, ConstParam, Crate, Enum,
@@ -171,8 +172,8 @@ fn write_function<'db>(f: &mut HirFormatter<'_, 'db>, func_id: FunctionId) -> Re
     if func.is_unsafe_to_call(db, None, f.edition()) {
         f.write_str("unsafe ")?;
     }
-    if let Some(abi) = &data.abi {
-        write!(f, "extern \"{}\" ", abi.as_str())?;
+    if data.abi != ExternAbi::Rust {
+        write!(f, "extern \"{}\" ", data.abi.as_str())?;
     }
     write!(f, "fn {}", data.name.display(f.db, f.edition()))?;
 
@@ -582,6 +583,7 @@ impl<'db> HirDisplay<'db> for TypeParam {
         let predicates = GenericPredicates::query_all(f.db, self.id.parent());
         let predicates = predicates
             .iter_identity()
+            .map(Unnormalized::skip_norm_wip)
             .filter(|wc| match wc.kind().skip_binder() {
                 ClauseKind::Trait(tr) => tr.self_ty() == ty,
                 ClauseKind::Projection(proj) => proj.self_ty() == ty,

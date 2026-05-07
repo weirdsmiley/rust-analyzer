@@ -154,7 +154,7 @@ fn implements_trait_unique_impl<'db>(
 }
 
 pub fn is_inherent_impl_coherent(db: &dyn HirDatabase, def_map: &DefMap, impl_id: ImplId) -> bool {
-    let self_ty = db.impl_self_ty(impl_id).instantiate_identity();
+    let self_ty = db.impl_self_ty(impl_id).instantiate_identity().skip_norm_wip();
     let self_ty = self_ty.kind();
     let impl_allowed = match self_ty {
         TyKind::Tuple(_)
@@ -246,7 +246,7 @@ pub fn check_orphan_rules<'db>(db: &'db dyn HirDatabase, impl_: ImplId) -> bool 
     let local_crate = impl_.lookup(db).container.krate(db);
     let is_local = |tgt_crate| tgt_crate == local_crate;
 
-    let trait_ref = impl_trait.instantiate_identity();
+    let trait_ref = impl_trait.instantiate_identity().skip_norm_wip();
     let trait_id = trait_ref.def_id.0;
     if is_local(trait_id.module(db).krate(db)) {
         // trait to be implemented is local

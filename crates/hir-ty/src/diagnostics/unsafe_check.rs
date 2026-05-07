@@ -298,7 +298,7 @@ impl<'db> UnsafeVisitor<'db> {
                     self.check_call(current, func);
                 }
                 if let TyKind::FnPtr(_, hdr) = callee.kind()
-                    && hdr.safety == Safety::Unsafe
+                    && hdr.safety() == Safety::Unsafe
                 {
                     self.on_unsafe_op(current.into(), UnsafetyReason::UnsafeFnCall);
                 }

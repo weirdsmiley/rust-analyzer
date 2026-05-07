@@ -7,7 +7,7 @@ use rustc_next_trait_solver::{
 use rustc_type_ir::{
     VisitorResult,
     inherent::IntoKind,
-    solve::{Certainty, GoalSource, MaybeCause, NoSolution},
+    solve::{Certainty, GoalSource, MaybeCause, MaybeInfo, NoSolution},
 };
 
 use crate::{
@@ -344,7 +344,10 @@ impl<'a, 'db> InspectGoal<'a, 'db> {
                 inspect::ProbeStep::MakeCanonicalResponse { shallow_certainty: c } => {
                     assert!(matches!(
                         shallow_certainty.replace(c),
-                        None | Some(Certainty::Maybe { cause: MaybeCause::Ambiguity, .. })
+                        None | Some(Certainty::Maybe(MaybeInfo {
+                            cause: MaybeCause::Ambiguity,
+                            ..
+                        }))
                     ));
                 }
                 inspect::ProbeStep::NestedProbe(ref probe) => {

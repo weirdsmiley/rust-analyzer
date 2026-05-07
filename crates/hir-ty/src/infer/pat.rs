@@ -1070,7 +1070,8 @@ https://doc.rust-lang.org/reference/types.html#trait-objects";
         {
             for (i, &subpat) in subpats.iter().enumerate_and_adjust(variant_fields.len(), ddpos) {
                 let field_id = LocalFieldId::from_raw(la_arena::RawIdx::from_u32(i as u32));
-                let field_ty = variant_field_tys[field_id].get().instantiate(interner, args);
+                let field_ty =
+                    variant_field_tys[field_id].get().instantiate(interner, args).skip_norm_wip();
                 self.infer_pat(subpat, field_ty, pat_info);
             }
             if let Err(()) = had_err {
@@ -1089,7 +1090,7 @@ https://doc.rust-lang.org/reference/types.html#trait-objects";
             for (i, &pat) in subpats.iter().enumerate() {
                 let field_id = LocalFieldId::from_raw(la_arena::RawIdx::from_u32(i as u32));
                 let expected = match variant_field_tys.get(field_id) {
-                    Some(field_ty) => field_ty.get().instantiate(interner, args),
+                    Some(field_ty) => field_ty.get().instantiate(interner, args).skip_norm_wip(),
                     None => self.types.types.error,
                 };
                 self.infer_pat(pat, expected, pat_info);
@@ -1201,7 +1202,7 @@ https://doc.rust-lang.org/reference/types.html#trait-objects";
                         });
                     }
 
-                    variant_field_tys[field_idx].get().instantiate(interner, args)
+                    variant_field_tys[field_idx].get().instantiate(interner, args).skip_norm_wip()
                 }
                 None => {
                     inexistent_fields.push(field);

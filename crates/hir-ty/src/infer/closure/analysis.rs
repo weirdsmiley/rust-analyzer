@@ -41,6 +41,7 @@ use hir_def::{
     resolver::ValueNs,
 };
 use macros::{TypeFoldable, TypeVisitable};
+use rustc_abi::ExternAbi;
 use rustc_ast_ir::Mutability;
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use rustc_type_ir::{
@@ -52,7 +53,7 @@ use span::Edition;
 use tracing::{debug, instrument};
 
 use crate::{
-    FnAbi, Span,
+    Span,
     infer::{
         CaptureInfo, CaptureSourceStack, CapturedPlace, InferenceContext, UpvarCapture,
         closure::analysis::expr_use_visitor::{
@@ -459,7 +460,7 @@ impl<'a, 'db> InferenceContext<'a, 'db> {
                         tupled_upvars_ty_for_borrow,
                         false,
                         Safety::Safe,
-                        FnAbi::Rust,
+                        ExternAbi::Rust,
                     ),
                     self.types.coroutine_captures_by_ref_bound_var_kinds,
                 ),

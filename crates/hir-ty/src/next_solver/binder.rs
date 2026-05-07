@@ -1,13 +1,10 @@
 use hir_def::TraitId;
 use macros::{TypeFoldable, TypeVisitable};
 
-use crate::{
-    FnAbi,
-    next_solver::{
-        Binder, Clauses, DbInterner, EarlyBinder, FnSig, GenericArg, PolyFnSig,
-        StoredBoundVarKinds, StoredClauses, StoredGenericArg, StoredGenericArgs, StoredTy,
-        StoredTys, TraitRef, Ty, abi::Safety,
-    },
+use crate::next_solver::{
+    Binder, Clauses, DbInterner, EarlyBinder, FnSig, FnSigKind, GenericArg, PolyFnSig,
+    StoredBoundVarKinds, StoredClauses, StoredGenericArg, StoredGenericArgs, StoredTy, StoredTys,
+    TraitRef, Ty,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -74,9 +71,7 @@ impl StoredEarlyBinder<StoredTraitRef> {
 pub struct StoredPolyFnSig {
     bound_vars: StoredBoundVarKinds,
     inputs_and_output: StoredTys,
-    c_variadic: bool,
-    safety: Safety,
-    abi: FnAbi,
+    fn_sig_kind: FnSigKind<'static>,
 }
 
 impl StoredPolyFnSig {
@@ -87,9 +82,11 @@ impl StoredPolyFnSig {
         Self {
             bound_vars,
             inputs_and_output: sig.inputs_and_output.store(),
-            c_variadic: sig.c_variadic,
-            safety: sig.safety,
-            abi: sig.abi,
+            fn_sig_kind: FnSigKind::new(
+                sig.fn_sig_kind.abi(),
+                sig.fn_sig_kind.safety(),
+                sig.fn_sig_kind.c_variadic(),
+            ),
         }
     }
 
@@ -98,9 +95,7 @@ impl StoredPolyFnSig {
         Binder::bind_with_vars(
             FnSig {
                 inputs_and_output: self.inputs_and_output.as_ref(),
-                c_variadic: self.c_variadic,
-                safety: self.safety,
-                abi: self.abi,
+                fn_sig_kind: self.fn_sig_kind,
             },
             self.bound_vars.as_ref(),
         )

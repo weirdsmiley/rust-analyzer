@@ -772,7 +772,10 @@ impl<'a, 'b, 'db, D: Delegate<'db>> ExprUseVisitor<'a, 'b, 'db, D> {
                         let field_place = self.cat_projection(
                             with_expr.into(),
                             with_place.clone(),
-                            adt_field_types[f_index].get().instantiate(self.cx.interner(), args),
+                            adt_field_types[f_index]
+                                .get()
+                                .instantiate(self.cx.interner(), args)
+                                .skip_norm_wip(),
                             ProjectionKind::Field {
                                 field_idx: f_index.into_raw().into_u32(),
                                 variant_idx: 0,

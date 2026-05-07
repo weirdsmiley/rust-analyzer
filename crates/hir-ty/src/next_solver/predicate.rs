@@ -885,7 +885,9 @@ impl<'db> rustc_type_ir::inherent::Clause<DbInterner<'db>> for Clause<'db> {
         let shifted_pred =
             cx.shift_bound_var_indices(trait_bound_vars.len(), bound_pred.skip_binder());
         // 2) Self: Bar1<'a, '^0.1> -> T: Bar1<'^0.0, '^0.1>
-        let new = EarlyBinder::bind(shifted_pred).instantiate(cx, trait_ref.skip_binder().args);
+        let new = EarlyBinder::bind(shifted_pred)
+            .instantiate(cx, trait_ref.skip_binder().args)
+            .skip_norm_wip();
         // 3) ['x] + ['b] -> ['x, 'b]
         let bound_vars =
             BoundVarKinds::new_from_iter(cx, trait_bound_vars.iter().chain(pred_bound_vars.iter()));

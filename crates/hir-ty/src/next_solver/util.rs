@@ -430,7 +430,7 @@ pub fn sizedness_constraint_for_ty<'db>(
             }
 
             adt.struct_tail_ty(interner).and_then(|tail_ty| {
-                let tail_ty = tail_ty.instantiate(interner, args);
+                let tail_ty = tail_ty.instantiate(interner, args).skip_norm_wip();
                 sizedness_constraint_for_ty(interner, sizedness, tail_ty)
             })
         }

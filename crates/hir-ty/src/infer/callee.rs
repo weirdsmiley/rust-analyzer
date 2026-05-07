@@ -2,6 +2,7 @@
 
 use std::iter;
 
+use rustc_abi::ExternAbi;
 use tracing::debug;
 
 use hir_def::{CallableDefId, ConstParamId, hir::ExprId, signatures::FunctionSignature};
@@ -11,7 +12,7 @@ use rustc_type_ir::{
 };
 
 use crate::{
-    Adjust, Adjustment, AutoBorrow, FnAbi,
+    Adjust, Adjustment, AutoBorrow,
     autoderef::{GeneralAutoderef, InferenceContextAutoderef},
     infer::{
         AllowTwoPhase, AutoBorrowMutability, Expectation, InferenceContext, InferenceDiagnostic,
@@ -181,9 +182,9 @@ impl<'db> InferenceContext<'_, 'db> {
                         interner.coroutine_for_closure(def_id),
                         tupled_upvars_ty,
                     ),
-                    coroutine_closure_sig.c_variadic,
-                    coroutine_closure_sig.safety,
-                    coroutine_closure_sig.abi,
+                    coroutine_closure_sig.fn_sig_kind.c_variadic(),
+                    coroutine_closure_sig.fn_sig_kind.safety(),
+                    coroutine_closure_sig.fn_sig_kind.abi(),
                 );
                 let adjust_steps = autoderef.adjust_steps_as_infer_ok();
                 let adjustments = autoderef.ctx().table.register_infer_ok(adjust_steps);
@@ -430,8 +431,11 @@ impl<'db> InferenceContext<'_, 'db> {
     ) -> Ty<'db> {
         let (fn_sig, def_id) = match callee_ty.kind() {
             TyKind::FnDef(def_id, args) => {
-                let fn_sig =
-                    self.db.callable_item_signature(def_id.0).instantiate(self.interner(), args);
+                let fn_sig = self
+                    .db
+                    .callable_item_signature(def_id.0)
+                    .instantiate(self.interner(), args)
+                    .skip_norm_wip();
                 (fn_sig, Some(def_id.0))
             }
 
@@ -460,11 +464,11 @@ impl<'db> InferenceContext<'_, 'db> {
             expected,
             arg_exprs,
             &indices_to_skip,
-            fn_sig.c_variadic,
+            fn_sig.c_variadic(),
             TupleArgumentsFlag::DontTupleArguments,
         );
 
-        if fn_sig.abi == FnAbi::RustCall
+        if fn_sig.abi() == ExternAbi::RustCall
             && let Some(ty) = fn_sig.inputs().last().copied()
             && let Some(tuple_trait) = self.lang_items.Tuple
         {
@@ -494,7 +498,7 @@ impl<'db> InferenceContext<'_, 'db> {
             expected,
             arg_exprs,
             &[],
-            fn_sig.c_variadic,
+            fn_sig.c_variadic(),
             TupleArgumentsFlag::TupleArguments,
         );
 
@@ -515,7 +519,7 @@ impl<'db> InferenceContext<'_, 'db> {
             expected,
             arg_exprs,
             &[],
-            method.sig.c_variadic,
+            method.sig.c_variadic(),
             TupleArgumentsFlag::TupleArguments,
         );
 

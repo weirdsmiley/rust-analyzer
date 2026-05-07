@@ -18,6 +18,7 @@ use crate::next_solver::{
 use super::{SolverDefId, interner::DbInterner};
 
 pub type RegionKind<'db> = rustc_type_ir::RegionKind<DbInterner<'db>>;
+pub type RegionConstraint<'db> = rustc_type_ir::RegionConstraint<DbInterner<'db>>;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Region<'db> {

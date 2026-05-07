@@ -75,7 +75,7 @@ impl<'db> InferenceContext<'_, 'db> {
 
         let interner = self.interner();
         let TypingMode::Analysis { defining_opaque_types_and_generators } =
-            self.table.infer_ctxt.typing_mode()
+            self.table.infer_ctxt.typing_mode_raw()
         else {
             unreachable!();
         };
@@ -108,8 +108,9 @@ impl<'db> InferenceContext<'_, 'db> {
                         continue;
                     }
 
-                    let expected =
-                        EarlyBinder::bind(ty.ty).instantiate(interner, opaque_type_key.args);
+                    let expected = EarlyBinder::bind(ty.ty)
+                        .instantiate(interner, opaque_type_key.args)
+                        .skip_norm_wip();
                     _ = self.demand_eqtype_fixme_no_diag(expected, hidden_type.ty);
                 }
 

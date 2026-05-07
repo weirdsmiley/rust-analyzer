@@ -710,7 +710,7 @@ where
         self.commit_if_ok(|this| {
             if let TyKind::FnPtr(_, hdr_b) = b.kind()
                 && fn_ty_a.safety().is_safe()
-                && !hdr_b.safety.is_safe()
+                && !hdr_b.safety().is_safe()
             {
                 let unsafe_a = Ty::safe_to_unsafe_fn_ty(this.interner(), fn_ty_a);
                 this.unify_and(
@@ -759,7 +759,8 @@ where
                             return Err(TypeError::ForceInlineCast);
                         }
 
-                        if b_hdr.safety.is_safe() && attrs.contains(AttrFlags::HAS_TARGET_FEATURE) {
+                        if b_hdr.safety().is_safe() && attrs.contains(AttrFlags::HAS_TARGET_FEATURE)
+                        {
                             let fn_target_features =
                                 TargetFeatures::from_fn_no_implications(self.db(), def_id);
                             // Allow the coercion if the current function has all the features that would be
@@ -807,7 +808,7 @@ where
                 //     `fn(arg0,arg1,...) -> _`
                 // or
                 //     `unsafe fn(arg0,arg1,...) -> _`
-                let safety = hdr.safety;
+                let safety = hdr.safety();
                 let closure_sig =
                     self.interner().signature_unclosure(args_a.as_closure().sig(), safety);
                 let pointer_ty = Ty::new_fn_ptr(self.interner(), closure_sig);

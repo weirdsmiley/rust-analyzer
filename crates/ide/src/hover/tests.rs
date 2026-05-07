@@ -5972,9 +5972,8 @@ const FOO$0: f64 = 1.0f64;
 fn hover_const_eval_floating_point() {
     check(
         r#"
-extern "rust-intrinsic" {
-    pub fn expf64(x: f64) -> f64;
-}
+#[rustc_intrinsic]
+pub fn expf64(x: f64) -> f64;
 
 const FOO$0: f64 = expf64(1.2);
 "#,

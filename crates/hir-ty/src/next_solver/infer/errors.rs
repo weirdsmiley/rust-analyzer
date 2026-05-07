@@ -6,7 +6,7 @@ use rustc_type_ir::{
     AliasRelationDirection, AliasTermKind, PredicatePolarity,
     error::ExpectedFound,
     inherent::IntoKind as _,
-    solve::{CandidateSource, Certainty, GoalSource, MaybeCause, NoSolution},
+    solve::{CandidateSource, Certainty, GoalSource, MaybeCause, MaybeInfo, NoSolution},
 };
 use tracing::{instrument, trace};
 
@@ -147,7 +147,7 @@ fn fulfillment_error_for_no_solution<'db>(
                         GeneralConstId::StaticId(statik) => db.value_ty(statik.into()).unwrap(),
                         GeneralConstId::AnonConstId(konst) => konst.loc(db).ty.get(),
                     };
-                    ct_ty.instantiate(interner, uv.args)
+                    ct_ty.instantiate(interner, uv.args).skip_norm_wip()
                 }
                 ConstKind::Param(param_ct) => param_ct.find_const_ty_from_env(obligation.param_env),
                 ConstKind::Value(cv) => cv.ty,
@@ -203,16 +203,16 @@ fn fulfillment_error_for_stalled<'db>(
             None,
         ) {
             Ok(GoalEvaluation {
-                certainty: Certainty::Maybe { cause: MaybeCause::Ambiguity, .. },
+                certainty: Certainty::Maybe(MaybeInfo { cause: MaybeCause::Ambiguity, .. }),
                 ..
             }) => (FulfillmentErrorCode::Ambiguity { overflow: None }, true),
             Ok(GoalEvaluation {
                 certainty:
-                    Certainty::Maybe {
+                    Certainty::Maybe(MaybeInfo {
                         cause:
                             MaybeCause::Overflow { suggest_increasing_limit, keep_constraints: _ },
                         ..
-                    },
+                    }),
                 ..
             }) => (
                 FulfillmentErrorCode::Ambiguity { overflow: Some(suggest_increasing_limit) },
@@ -495,8 +495,8 @@ impl<'db> BestObligation<'db> {
                 self.detect_error_in_self_ty_normalization(goal, pred.self_ty())?;
             }
             Some(PredicateKind::NormalizesTo(pred))
-                if let AliasTermKind::ProjectionTy | AliasTermKind::ProjectionConst =
-                    pred.alias.kind(interner) =>
+                if let AliasTermKind::ProjectionTy { .. }
+                | AliasTermKind::ProjectionConst { .. } = pred.alias.kind(interner) =>
             {
                 self.detect_error_in_self_ty_normalization(goal, pred.alias.self_ty())?;
                 self.detect_non_well_formed_assoc_item(goal, pred.alias)?;
@@ -520,8 +520,8 @@ impl<'db> ProofTreeVisitor<'db> for BestObligation<'db> {
         let interner = goal.infcx().interner;
         // Skip goals that aren't the *reason* for our goal's failure.
         match (self.consider_ambiguities, goal.result()) {
-            (true, Ok(Certainty::Maybe { cause: MaybeCause::Ambiguity, .. })) | (false, Err(_)) => {
-            }
+            (true, Ok(Certainty::Maybe(MaybeInfo { cause: MaybeCause::Ambiguity, .. })))
+            | (false, Err(_)) => {}
             _ => return ControlFlow::Continue(()),
         }
 
@@ -559,7 +559,7 @@ impl<'db> ProofTreeVisitor<'db> for BestObligation<'db> {
             PredicateKind::NormalizesTo(normalizes_to)
                 if matches!(
                     normalizes_to.alias.kind(interner),
-                    AliasTermKind::ProjectionTy | AliasTermKind::ProjectionConst
+                    AliasTermKind::ProjectionTy { .. } | AliasTermKind::ProjectionConst { .. }
                 ) =>
             {
                 ChildMode::Trait(pred.kind().rebind(TraitPredicate {

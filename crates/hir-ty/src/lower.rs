@@ -37,6 +37,7 @@ use hir_def::{
 use hir_expand::name::Name;
 use la_arena::{Arena, ArenaMap, Idx};
 use path::{PathDiagnosticCallback, PathLoweringContext};
+use rustc_abi::ExternAbi;
 use rustc_ast_ir::Mutability;
 use rustc_hash::FxHashSet;
 use rustc_type_ir::{
@@ -51,16 +52,16 @@ use thin_vec::ThinVec;
 use tracing::debug;
 
 use crate::{
-    FnAbi, ImplTraitId, TyLoweringDiagnostic, TyLoweringDiagnosticKind,
+    ImplTraitId, TyLoweringDiagnostic, TyLoweringDiagnosticKind,
     consteval::{create_anon_const, path_to_const},
     db::{AnonConstId, GeneralConstId, HirDatabase, InternedOpaqueTyId},
     generics::{Generics, SingleGenerics, generics},
     next_solver::{
         AliasTy, Binder, BoundExistentialPredicates, Clause, ClauseKind, Clauses, Const, ConstKind,
-        DbInterner, EarlyBinder, EarlyParamRegion, ErrorGuaranteed, FxIndexMap, GenericArg,
-        GenericArgs, ParamConst, ParamEnv, PolyFnSig, Predicate, Region, SolverDefId,
-        StoredClauses, StoredEarlyBinder, StoredGenericArg, StoredGenericArgs, StoredPolyFnSig,
-        StoredTraitRef, StoredTy, TraitPredicate, TraitRef, Ty, Tys, abi::Safety,
+        DbInterner, EarlyBinder, EarlyParamRegion, ErrorGuaranteed, FnSigKind, FxIndexMap,
+        GenericArg, GenericArgs, ParamConst, ParamEnv, PolyFnSig, Predicate, Region, StoredClauses,
+        StoredEarlyBinder, StoredGenericArg, StoredGenericArgs, StoredPolyFnSig, StoredTraitRef,
+        StoredTy, TraitPredicate, TraitRef, Ty, Tys, Unnormalized, abi::Safety,
         util::BottomUpFolder,
     },
 };
@@ -430,8 +431,7 @@ impl<'db, 'a> TyLoweringContext<'db, 'a> {
                             |f| ImplTraitId::ReturnTypeImplTrait(f, idx),
                             |a| ImplTraitId::TypeAliasImplTrait(a, idx),
                         );
-                        let opaque_ty_id: SolverDefId =
-                            self.db.intern_impl_trait_id(impl_trait_id).into();
+                        let opaque_ty_id = self.db.intern_impl_trait_id(impl_trait_id);
 
                         // We don't want to lower the bounds inside the binders
                         // we're currently in, because they don't end up inside
@@ -448,12 +448,13 @@ impl<'db, 'a> TyLoweringContext<'db, 'a> {
                             });
                         self.impl_trait_mode.opaque_type_data[idx] = actual_opaque_type_data;
 
-                        let args = GenericArgs::identity_for_item(self.interner, opaque_ty_id);
+                        let args =
+                            GenericArgs::identity_for_item(self.interner, opaque_ty_id.into());
                         Ty::new_alias(
                             self.interner,
                             AliasTy::new_from_args(
                                 self.interner,
-                                AliasTyKind::Opaque { def_id: opaque_ty_id },
+                                AliasTyKind::Opaque { def_id: opaque_ty_id.into() },
                                 args,
                             ),
                         )
@@ -485,9 +486,11 @@ impl<'db, 'a> TyLoweringContext<'db, 'a> {
         Ty::new_fn_ptr(
             interner,
             Binder::dummy(FnSig {
-                abi: fn_.abi.as_ref().map_or(FnAbi::Rust, FnAbi::from_symbol),
-                safety: if fn_.is_unsafe { Safety::Unsafe } else { Safety::Safe },
-                c_variadic: fn_.is_varargs,
+                fn_sig_kind: FnSigKind::new(
+                    fn_.abi,
+                    if fn_.is_unsafe { Safety::Unsafe } else { Safety::Safe },
+                    fn_.is_varargs,
+                ),
                 inputs_and_output: Tys::new_from_slice(&args),
             }),
         )
@@ -760,7 +763,7 @@ impl<'db, 'a> TyLoweringContext<'db, 'a> {
             let mut projection_bounds = FxIndexMap::default();
             for proj in projections {
                 let key = (
-                    proj.skip_binder().def_id().expect_type_alias(),
+                    proj.skip_binder().def_id().0,
                     interner.anonymize_bound_vars(
                         proj.map_bound(|proj| proj.projection_term.trait_ref(interner)),
                     ),
@@ -808,7 +811,7 @@ impl<'db, 'a> TyLoweringContext<'db, 'a> {
                                     .0
                                     .trait_items(self.db)
                                     .associated_types()
-                                    .map(|item| (item, trait_ref)),
+                                    .map(|item| (item.into(), trait_ref)),
                             );
                         }
                         ClauseKind::Projection(pred) => {
@@ -842,7 +845,7 @@ impl<'db, 'a> TyLoweringContext<'db, 'a> {
                             // the discussion in #56288 for alternatives.
                             if !references_self {
                                 let key = (
-                                    pred.skip_binder().projection_term.def_id.expect_type_alias(),
+                                    pred.skip_binder().def_id().0,
                                     interner.anonymize_bound_vars(pred.map_bound(|proj| {
                                         proj.projection_term.trait_ref(interner)
                                     })),
@@ -868,7 +871,7 @@ impl<'db, 'a> TyLoweringContext<'db, 'a> {
                 .filter_map(|key| projection_bounds.get(&key).copied())
                 .collect();
 
-            projection_bounds.sort_unstable_by_key(|proj| proj.skip_binder().def_id());
+            projection_bounds.sort_unstable_by_key(|proj| proj.skip_binder().def_id().0);
 
             let principal = principal.map(|principal| {
                 principal.map_bound(|principal| {
@@ -950,13 +953,13 @@ impl<'db, 'a> TyLoweringContext<'db, 'a> {
         }
     }
 
-    fn lower_impl_trait(&mut self, def_id: SolverDefId, bounds: &[TypeBound]) -> ImplTrait {
+    fn lower_impl_trait(&mut self, def_id: InternedOpaqueTyId, bounds: &[TypeBound]) -> ImplTrait {
         let interner = self.interner;
         cov_mark::hit!(lower_rpit);
-        let args = GenericArgs::identity_for_item(interner, def_id);
+        let args = GenericArgs::identity_for_item(interner, def_id.into());
         let self_ty = Ty::new_alias(
             self.interner,
-            AliasTy::new_from_args(interner, rustc_type_ir::Opaque { def_id }, args),
+            AliasTy::new_from_args(interner, rustc_type_ir::Opaque { def_id: def_id.into() }, args),
         );
         let (predicates, assoc_ty_bounds_start) =
             self.with_shifted_in(DebruijnIndex::from_u32(1), |ctx| {
@@ -1799,7 +1802,9 @@ fn resolve_type_param_assoc_type_shorthand(
             let (assoc_type, args) = assoc_type_and_args
                 .get_with(|(assoc_type, args)| (*assoc_type, args.as_ref()))
                 .skip_binder();
-            let args = EarlyBinder::bind(args).instantiate(interner, bounded_trait_ref.args);
+            let args = EarlyBinder::bind(args)
+                .instantiate(interner, bounded_trait_ref.args)
+                .skip_norm_wip();
             let current_result = StoredEarlyBinder::bind((assoc_type, args.store()));
             if let Some(this_trait_resolution) = &this_trait_resolution {
                 if *this_trait_resolution == current_result {
@@ -1896,10 +1901,9 @@ pub(crate) fn type_alias_bounds_with_diagnostics(
         LifetimeElisionKind::AnonymousReportError,
     );
     let interner = ctx.interner;
-    let def_id = type_alias.into();
 
-    let item_args = GenericArgs::identity_for_item(interner, def_id);
-    let interner_ty = Ty::new_projection_from_args(interner, def_id, item_args);
+    let item_args = GenericArgs::identity_for_item(interner, type_alias.into());
+    let interner_ty = Ty::new_projection_from_args(interner, type_alias.into(), item_args);
 
     let mut bounds = Vec::new();
     let mut assoc_ty_bounds = Vec::new();
@@ -2088,8 +2092,10 @@ pub(crate) fn param_env_from_predicates<'db>(
     interner: DbInterner<'db>,
     predicates: &'db GenericPredicates,
 ) -> ParamEnv<'db> {
-    let clauses =
-        rustc_type_ir::elaborate::elaborate(interner, predicates.all_predicates().iter_identity());
+    let clauses = rustc_type_ir::elaborate::elaborate(
+        interner,
+        predicates.all_predicates().iter_identity().map(Unnormalized::skip_norm_wip),
+    );
     let clauses = Clauses::new_from_iter(interner, clauses);
 
     // FIXME: We should normalize projections here, like rustc does.
@@ -2459,10 +2465,12 @@ fn fn_sig_for_fn(
 
     // If/when we track late bound vars, we need to switch this to not be `dummy`
     let result = StoredEarlyBinder::bind(StoredPolyFnSig::new(Binder::dummy(FnSig {
-        abi: data.abi.as_ref().map_or(FnAbi::Rust, FnAbi::from_symbol),
-        c_variadic: data.is_varargs(),
-        safety: if data.is_unsafe() { Safety::Unsafe } else { Safety::Safe },
         inputs_and_output,
+        fn_sig_kind: FnSigKind::new(
+            data.abi,
+            if data.is_unsafe() { Safety::Unsafe } else { Safety::Safe },
+            data.is_varargs(),
+        ),
     })));
     TyLoweringResult::from_ctx(result, ctx_params)
 }
@@ -2485,9 +2493,7 @@ fn fn_sig_for_struct_constructor(
     let inputs_and_output =
         Tys::new_from_iter(DbInterner::new_no_crate(db), params.chain(Some(ret)));
     StoredEarlyBinder::bind(StoredPolyFnSig::new(Binder::dummy(FnSig {
-        abi: FnAbi::Rust,
-        c_variadic: false,
-        safety: Safety::Safe,
+        fn_sig_kind: FnSigKind::new(ExternAbi::Rust, Safety::Safe, false),
         inputs_and_output,
     })))
 }
@@ -2504,9 +2510,7 @@ fn fn_sig_for_enum_variant_constructor(
     let inputs_and_output =
         Tys::new_from_iter(DbInterner::new_no_crate(db), params.chain(Some(ret)));
     StoredEarlyBinder::bind(StoredPolyFnSig::new(Binder::dummy(FnSig {
-        abi: FnAbi::Rust,
-        c_variadic: false,
-        safety: Safety::Safe,
+        fn_sig_kind: FnSigKind::new(ExternAbi::Rust, Safety::Safe, false),
         inputs_and_output,
     })))
 }
@@ -2607,5 +2611,8 @@ pub(crate) fn associated_type_by_name_including_super_traits_allow_ambiguity<'db
         .get_with(|(assoc_type, trait_args)| (*assoc_type, trait_args.as_ref()))
         .skip_binder();
     let interner = DbInterner::new_no_crate(db);
-    Some((assoc_type, EarlyBinder::bind(trait_args).instantiate(interner, trait_ref.args)))
+    Some((
+        assoc_type,
+        EarlyBinder::bind(trait_args).instantiate(interner, trait_ref.args).skip_norm_wip(),
+    ))
 }

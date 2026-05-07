@@ -1546,7 +1546,7 @@ impl<'a, 'db> MirLowerCtx<'a, 'db> {
             GeneralConstId::StaticId(id) => self.db.value_ty(id.into()).unwrap(),
             GeneralConstId::AnonConstId(id) => id.loc(self.db).ty.get(),
         };
-        let ty = ty.instantiate(self.interner(), subst);
+        let ty = ty.instantiate(self.interner(), subst).skip_norm_wip();
         Ok(Operand {
             kind: OperandKind::Constant { konst: konst.store(), ty: ty.store() },
             span: None,

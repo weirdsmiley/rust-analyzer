@@ -542,7 +542,8 @@ fn pointer_kind<'db>(
             if let Some((last_field, _)) = struct_data.fields().iter().last() {
                 let last_field_ty = ctx.db.field_types(id.into())[last_field]
                     .get()
-                    .instantiate(ctx.interner(), subst);
+                    .instantiate(ctx.interner(), subst)
+                    .skip_norm_wip();
                 pointer_kind(expr, last_field_ty, ctx)
             } else {
                 Ok(Some(PointerKind::Thin))

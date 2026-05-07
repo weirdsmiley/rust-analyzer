@@ -87,7 +87,7 @@ fn has_drop_glue_impl<'db>(
                         .map(|(_, field_ty)| {
                             has_drop_glue_impl(
                                 infcx,
-                                field_ty.get().instantiate(infcx.interner, subst),
+                                field_ty.get().instantiate(infcx.interner, subst).skip_norm_wip(),
                                 env,
                                 visited,
                             )
@@ -107,7 +107,10 @@ fn has_drop_glue_impl<'db>(
                             .map(|(_, field_ty)| {
                                 has_drop_glue_impl(
                                     infcx,
-                                    field_ty.get().instantiate(infcx.interner, subst),
+                                    field_ty
+                                        .get()
+                                        .instantiate(infcx.interner, subst)
+                                        .skip_norm_wip(),
                                     env,
                                     visited,
                                 )

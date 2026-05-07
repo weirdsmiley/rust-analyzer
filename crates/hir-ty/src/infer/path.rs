@@ -16,7 +16,7 @@ use crate::{
     lower::{GenericPredicates, LifetimeElisionKind},
     method_resolution::{self, CandidateId, MethodError},
     next_solver::{
-        GenericArg, GenericArgs, TraitRef, Ty, infer::traits::ObligationCause,
+        GenericArg, GenericArgs, TraitRef, Ty, Unnormalized, infer::traits::ObligationCause,
         util::clauses_as_obligations,
     },
 };
@@ -42,7 +42,7 @@ impl<'db> InferenceContext<'_, 'db> {
 
         self.add_required_obligations_for_value_path(id, generic_def, args);
 
-        let ty = self.db.value_ty(value_def)?.instantiate(self.interner(), args);
+        let ty = self.db.value_ty(value_def)?.instantiate(self.interner(), args).skip_norm_wip();
         let ty = self.process_remote_user_written_ty(ty);
         Some((value, ty))
     }
@@ -78,7 +78,7 @@ impl<'db> InferenceContext<'_, 'db> {
                 };
             }
             ValueNs::ImplSelf(impl_id) => {
-                let ty = self.db.impl_self_ty(impl_id).instantiate_identity();
+                let ty = self.db.impl_self_ty(impl_id).instantiate_identity().skip_norm_wip();
                 return if let Some((AdtId::StructId(struct_id), substs)) = ty.as_adt() {
                     Some(ValuePathResolution::GenericDef(
                         struct_id.into(),
@@ -237,7 +237,9 @@ impl<'db> InferenceContext<'_, 'db> {
         let predicates = GenericPredicates::query_all(self.db, def);
         let param_env = self.table.param_env;
         self.table.register_predicates(clauses_as_obligations(
-            predicates.iter_instantiated(interner, subst.as_slice()),
+            predicates
+                .iter_instantiated(interner, subst.as_slice())
+                .map(Unnormalized::skip_norm_wip),
             ObligationCause::new(node),
             param_env,
         ));
@@ -315,8 +317,11 @@ impl<'db> InferenceContext<'_, 'db> {
         let substs = match container {
             ItemContainerId::ImplId(impl_id) => {
                 let impl_substs = self.table.fresh_args_for_item(id.into(), impl_id.into());
-                let impl_self_ty =
-                    self.db.impl_self_ty(impl_id).instantiate(self.interner(), impl_substs);
+                let impl_self_ty = self
+                    .db
+                    .impl_self_ty(impl_id)
+                    .instantiate(self.interner(), impl_substs)
+                    .skip_norm_wip();
                 _ = self.demand_eqtype(id, impl_self_ty, ty);
                 impl_substs
             }

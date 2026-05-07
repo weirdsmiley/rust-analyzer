@@ -9,11 +9,11 @@ use hir_def::{
 use hir_def::{TraitId, type_ref::Rawness};
 use intern::{Interned, InternedRef, impl_internable};
 use macros::GenericTypeVisitable;
-use rustc_abi::{Float, Integer, Size};
+use rustc_abi::{ExternAbi, Float, Integer, Size};
 use rustc_ast_ir::{Mutability, try_visit, visit::VisitorResult};
 use rustc_type_ir::{
-    AliasTyKind, BoundVar, BoundVarIndexKind, ClosureKind, DebruijnIndex, FlagComputation, Flags,
-    FloatTy, FloatVid, GenericTypeVisitable, InferTy, IntTy, IntVid, Interner, TyVid, TypeFoldable,
+    BoundVar, BoundVarIndexKind, ClosureKind, DebruijnIndex, FlagComputation, Flags, FloatTy,
+    FloatVid, GenericTypeVisitable, InferTy, IntTy, IntVid, Interner, TyVid, TypeFoldable,
     TypeSuperFoldable, TypeSuperVisitable, TypeVisitable, TypeVisitableExt, TypeVisitor, UintTy,
     Upcast, WithCachedTypeInfo,
     inherent::{
@@ -26,13 +26,12 @@ use rustc_type_ir::{
 };
 
 use crate::{
-    FnAbi,
-    db::HirDatabase,
+    db::{HirDatabase, InternedOpaqueTyId},
     lower::GenericPredicates,
     next_solver::{
         AdtDef, AliasTy, Binder, CallableIdWrapper, Clause, ClauseKind, ClosureIdWrapper, Const,
         CoroutineClosureIdWrapper, CoroutineIdWrapper, FnSig, GenericArgKind, PolyFnSig, Predicate,
-        Region, TraitRef, TypeAliasIdWrapper,
+        Region, TraitRef, TypeAliasIdWrapper, Unnormalized,
         abi::Safety,
         impl_foldable_for_interned_slice, impl_stored_interned, interned_slice,
         util::{CoroutineArgsExt, IntegerTypeExt},
@@ -47,6 +46,9 @@ use super::{
 pub type SimplifiedType = rustc_type_ir::fast_reject::SimplifiedType<SolverDefId>;
 pub type TyKind<'db> = rustc_type_ir::TyKind<DbInterner<'db>>;
 pub type FnHeader<'db> = rustc_type_ir::FnHeader<DbInterner<'db>>;
+pub type AliasTyKind<'db> = rustc_type_ir::AliasTyKind<DbInterner<'db>>;
+pub type AliasTermKind<'db> = rustc_type_ir::AliasTermKind<DbInterner<'db>>;
+pub type FnSigKind<'db> = rustc_type_ir::FnSigKind<DbInterner<'db>>;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Ty<'db> {
@@ -174,12 +176,12 @@ impl<'db> Ty<'db> {
 
     pub fn new_opaque(
         interner: DbInterner<'db>,
-        def_id: SolverDefId,
+        def_id: InternedOpaqueTyId,
         args: GenericArgs<'db>,
     ) -> Self {
         Ty::new_alias(
             interner,
-            AliasTy::new_from_args(interner, AliasTyKind::Opaque { def_id }, args),
+            AliasTy::new_from_args(interner, AliasTyKind::Opaque { def_id: def_id.into() }, args),
         )
     }
 
@@ -281,9 +283,9 @@ impl<'db> Ty<'db> {
                 tys.last().is_none_or(|ty| ty.has_trivial_sizedness(tcx, sizedness))
             }
 
-            TyKind::Adt(def, args) => def
-                .sizedness_constraint(tcx, sizedness)
-                .is_none_or(|ty| ty.instantiate(tcx, args).has_trivial_sizedness(tcx, sizedness)),
+            TyKind::Adt(def, args) => def.sizedness_constraint(tcx, sizedness).is_none_or(|ty| {
+                ty.instantiate(tcx, args).skip_norm_wip().has_trivial_sizedness(tcx, sizedness)
+            }),
 
             TyKind::Alias(..) | TyKind::Param(_) | TyKind::Placeholder(..) | TyKind::Bound(..) => {
                 false
@@ -534,7 +536,7 @@ impl<'db> Ty<'db> {
     /// unsafe.
     pub fn safe_to_unsafe_fn_ty(interner: DbInterner<'db>, sig: PolyFnSig<'db>) -> Ty<'db> {
         assert!(sig.safety().is_safe());
-        Ty::new_fn_ptr(interner, sig.map_bound(|sig| FnSig { safety: Safety::Unsafe, ..sig }))
+        Ty::new_fn_ptr(interner, sig.map_bound(|sig| sig.set_safety(Safety::Unsafe)))
     }
 
     /// Returns the type of `*ty`.
@@ -571,7 +573,7 @@ impl<'db> Ty<'db> {
     pub fn callable_sig(self, interner: DbInterner<'db>) -> Option<Binder<'db, FnSig<'db>>> {
         match self.kind() {
             TyKind::FnDef(callable, args) => {
-                Some(interner.fn_sig(callable).instantiate(interner, args))
+                Some(interner.fn_sig(callable).instantiate(interner, args).skip_norm_wip())
             }
             TyKind::FnPtr(sig, hdr) => Some(sig.with(hdr)),
             TyKind::Closure(_, closure_args) => {
@@ -595,9 +597,7 @@ impl<'db> Ty<'db> {
                                 .iter()
                                 .chain(std::iter::once(return_ty)),
                         ),
-                        c_variadic: sig.c_variadic,
-                        safety: sig.safety,
-                        abi: sig.abi,
+                        fn_sig_kind: sig.fn_sig_kind,
                     }
                 }))
             }
@@ -731,9 +731,10 @@ impl<'db> Ty<'db> {
         match self.kind() {
             TyKind::Alias(AliasTy { kind: AliasTyKind::Opaque { def_id }, args, .. }) => Some(
                 def_id
-                    .expect_opaque_ty()
+                    .0
                     .predicates(db)
                     .iter_instantiated_copied(interner, args.as_slice())
+                    .map(Unnormalized::skip_norm_wip)
                     .collect(),
             ),
             TyKind::Param(param) => {
@@ -745,6 +746,7 @@ impl<'db> Ty<'db> {
                         TypeParamProvenance::ArgumentImplTrait => {
                             let predicates = GenericPredicates::query_all(db, param.id.parent())
                                 .iter_identity()
+                                .map(Unnormalized::skip_norm_wip)
                                 .filter(|wc| match wc.kind().skip_binder() {
                                     ClauseKind::Trait(tr) => tr.self_ty() == self,
                                     ClauseKind::Projection(pred) => pred.self_ty() == self,
@@ -1502,7 +1504,7 @@ impl<'db> DbInterner<'db> {
                 TyKind::Tuple(params) => params,
                 _ => panic!(),
             };
-            self.mk_fn_sig(params, s.output(), s.c_variadic, safety, FnAbi::Rust)
+            self.mk_fn_sig(params, s.output(), s.c_variadic(), safety, ExternAbi::Rust)
         })
     }
 }

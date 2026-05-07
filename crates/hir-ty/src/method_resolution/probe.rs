@@ -32,7 +32,7 @@ use crate::{
     },
     next_solver::{
         Binder, Canonical, ClauseKind, DbInterner, FnSig, GenericArg, GenericArgs, Goal, ParamEnv,
-        PolyTraitRef, Predicate, Region, SimplifiedType, TraitRef, Ty, TyKind,
+        PolyTraitRef, Predicate, Region, SimplifiedType, TraitRef, Ty, TyKind, Unnormalized,
         infer::{
             BoundRegionConversionTime, InferCtxt, InferOk,
             canonical::{QueryResponse, canonicalizer::OriginalQueryValues},
@@ -1585,8 +1585,11 @@ impl<'a, 'db, Choice: ProbeChoice<'db>> ProbeContext<'a, 'db, Choice> {
                 InherentImplCandidate { impl_def_id, .. } => {
                     let impl_args =
                         self.infcx().fresh_args_for_item(self.ctx.call_span, impl_def_id.into());
-                    let impl_ty =
-                        self.db().impl_self_ty(impl_def_id).instantiate(self.interner(), impl_args);
+                    let impl_ty = self
+                        .db()
+                        .impl_self_ty(impl_def_id)
+                        .instantiate(self.interner(), impl_args)
+                        .skip_norm_wip();
                     (xform_self_ty, xform_ret_ty) =
                         self.xform_self_ty(probe.item, impl_ty, impl_args.as_slice());
                     match ocx.relate(
@@ -1605,7 +1608,9 @@ impl<'a, 'db, Choice: ProbeChoice<'db>> ProbeContext<'a, 'db, Choice> {
                     // Check whether the impl imposes obligations we have to worry about.
                     let impl_bounds = GenericPredicates::query_all(self.db(), impl_def_id.into());
                     let impl_bounds = clauses_as_obligations(
-                        impl_bounds.iter_instantiated(self.interner(), impl_args.as_slice()),
+                        impl_bounds
+                            .iter_instantiated(self.interner(), impl_args.as_slice())
+                            .map(Unnormalized::skip_norm_wip),
                         ObligationCause::new(self.ctx.call_span),
                         self.param_env(),
                     );
@@ -2054,7 +2059,7 @@ impl<'a, 'db, Choice: ProbeChoice<'db>> ProbeContext<'a, 'db, Choice> {
             fn_sig.instantiate(self.interner(), args)
         };
 
-        self.interner().instantiate_bound_regions_with_erased(xform_fn_sig)
+        self.interner().instantiate_bound_regions_with_erased(xform_fn_sig.skip_norm_wip())
     }
 
     fn with_impl_item(&mut self, def_id: ImplId, callback: impl FnMut(&mut Self, CandidateId)) {

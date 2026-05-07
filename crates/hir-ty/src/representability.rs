@@ -47,7 +47,7 @@ pub(crate) fn representability_cycle(
 
 fn variant_representability(db: &dyn HirDatabase, id: VariantId) -> Representability {
     for ty in db.field_types(id).values() {
-        rtry!(representability_ty(db, ty.get().instantiate_identity()));
+        rtry!(representability_ty(db, ty.get().instantiate_identity().skip_norm_wip()));
     }
     Representability::Representable
 }
@@ -94,7 +94,11 @@ fn params_in_repr(db: &dyn HirDatabase, def_id: AdtId) -> Box<[bool]> {
         .collect::<Box<[bool]>>();
     let mut handle_variant = |variant| {
         for field in db.field_types(variant).values() {
-            params_in_repr_ty(db, field.get().instantiate_identity(), &mut params_in_repr);
+            params_in_repr_ty(
+                db,
+                field.get().instantiate_identity().skip_norm_wip(),
+                &mut params_in_repr,
+            );
         }
     };
     match def_id {

@@ -197,9 +197,10 @@ impl<V: PartialEq> ProjectionElem<V> {
                 }
             },
             ProjectionElem::Field(Either::Left(f)) => match base.kind() {
-                TyKind::Adt(_, subst) => {
-                    db.field_types(f.parent)[f.local_id].get().instantiate(interner, subst)
-                }
+                TyKind::Adt(_, subst) => db.field_types(f.parent)[f.local_id]
+                    .get()
+                    .instantiate(interner, subst)
+                    .skip_norm_wip(),
                 ty => {
                     never!("Only adt has field, found {:?}", ty);
                     Ty::new_error(interner, ErrorGuaranteed)
