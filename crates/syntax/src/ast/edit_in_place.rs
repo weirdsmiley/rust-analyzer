@@ -7,7 +7,7 @@ use parser::T;
 use crate::{
     AstNode, AstToken, Direction,
     algo::{self, neighbor},
-    ast::{self, edit::IndentLevel, make, syntax_factory::SyntaxFactory},
+    ast::{self, make, syntax_factory::SyntaxFactory},
     syntax_editor::SyntaxEditor,
     ted,
 };
@@ -260,56 +260,5 @@ impl ast::RecordExprField {
                 .record_expr_field(editor.make().name_ref(&name_ref.text()), Some(expr));
             editor.replace(self.syntax(), new_field.syntax());
         }
-    }
-}
-
-pub trait Indent: AstNode + Clone + Sized {
-    fn indent_level(&self) -> IndentLevel {
-        IndentLevel::from_node(self.syntax())
-    }
-    fn indent(&self, by: IndentLevel) {
-        by.increase_indent(self.syntax());
-    }
-    fn dedent(&self, by: IndentLevel) {
-        by.decrease_indent(self.syntax());
-    }
-    fn reindent_to(&self, target_level: IndentLevel) {
-        let current_level = IndentLevel::from_node(self.syntax());
-        self.dedent(current_level);
-        self.indent(target_level);
-    }
-}
-
-impl<N: AstNode + Clone> Indent for N {}
-
-#[cfg(test)]
-mod tests {
-    use parser::Edition;
-
-    use crate::SourceFile;
-
-    use super::*;
-
-    fn ast_mut_from_text<N: AstNode>(text: &str) -> N {
-        let parse = SourceFile::parse(text, Edition::CURRENT);
-        parse.tree().syntax().descendants().find_map(N::cast).unwrap().clone_for_update()
-    }
-
-    #[test]
-    fn test_increase_indent() {
-        let arm_list = ast_mut_from_text::<ast::Fn>(
-            "fn foo() {
-    ;
-    ;
-}",
-        );
-        arm_list.indent(IndentLevel(2));
-        assert_eq!(
-            arm_list.to_string(),
-            "fn foo() {
-            ;
-            ;
-        }",
-        );
     }
 }
