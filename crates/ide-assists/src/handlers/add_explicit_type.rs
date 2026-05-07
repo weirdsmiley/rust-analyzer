@@ -208,8 +208,6 @@ fn main() {
 }
 "#,
         );
-        // note: this may break later if we add more consteval. it just needs to be something that our
-        // consteval engine doesn't understand
         check_assist_not_applicable(
             add_explicit_type,
             r#"
