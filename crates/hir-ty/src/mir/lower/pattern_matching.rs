@@ -504,6 +504,7 @@ impl<'db> MirLowerCtx<'_, 'db> {
                 (current, current_else)
             }
             Pat::Box { .. } => not_supported!("box pattern"),
+            Pat::Deref { .. } => not_supported!("deref pattern"),
             Pat::ConstBlock(_) => not_supported!("const block pattern"),
         })
     }

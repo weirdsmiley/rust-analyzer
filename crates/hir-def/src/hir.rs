@@ -714,6 +714,9 @@ pub enum Pat {
     Box {
         inner: PatId,
     },
+    Deref {
+        inner: PatId,
+    },
     ConstBlock(ExprId),
     /// An expression inside a pattern. That can only occur inside assignments.
     ///
@@ -746,7 +749,7 @@ impl Pat {
             Pat::Record { args, .. } => {
                 args.iter().map(|f| f.pat).for_each(f);
             }
-            Pat::Box { inner } => f(*inner),
+            Pat::Box { inner } | Pat::Deref { inner } => f(*inner),
         }
     }
 }

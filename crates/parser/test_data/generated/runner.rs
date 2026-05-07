@@ -195,6 +195,8 @@ mod ok {
         run_and_expect_no_errors("test_data/parser/inline/ok/default_unsafe_item.rs");
     }
     #[test]
+    fn deref_pat() { run_and_expect_no_errors("test_data/parser/inline/ok/deref_pat.rs"); }
+    #[test]
     fn destructuring_assignment_struct_rest_pattern() {
         run_and_expect_no_errors(
             "test_data/parser/inline/ok/destructuring_assignment_struct_rest_pattern.rs",

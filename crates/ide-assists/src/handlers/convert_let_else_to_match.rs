@@ -146,6 +146,10 @@ fn remove_mut_and_collect_idents(
             let pat = remove_mut_and_collect_idents(editor, &p.pat()?, acc)?;
             make.box_pat(pat).into()
         }
+        ast::Pat::DerefPat(p) => {
+            let pat = remove_mut_and_collect_idents(editor, &p.pat()?, acc)?;
+            make.deref_pat(pat)
+        }
         ast::Pat::OrPat(p) => {
             let pats = p
                 .pats()

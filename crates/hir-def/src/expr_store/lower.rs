@@ -2794,6 +2794,10 @@ impl<'db> ExprCollector<'db> {
                 let inner = self.collect_pat_opt(boxpat.pat(), binding_list);
                 Pat::Box { inner }
             }
+            ast::Pat::DerefPat(inner) => {
+                let inner = self.collect_pat_opt(inner.pat(), binding_list);
+                Pat::Deref { inner }
+            }
             ast::Pat::ConstBlockPat(const_block_pat) => {
                 if let Some(block) = const_block_pat.block_expr() {
                     let expr_id = self.with_label_rib(RibKind::Constant, |this| {

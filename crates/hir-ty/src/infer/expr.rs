@@ -194,6 +194,7 @@ impl<'db> InferenceContext<'_, 'db> {
             | Pat::Path(_)
             | Pat::Tuple { .. }
             | Pat::Box { .. }
+            | Pat::Deref { .. }
             | Pat::Ref { .. }
             | Pat::Lit(_)
             | Pat::Range { .. }

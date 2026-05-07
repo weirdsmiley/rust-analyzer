@@ -873,6 +873,10 @@ pub fn box_pat(pat: ast::Pat) -> ast::BoxPat {
     ast_from_text(&format!("fn f(box {pat}: ())"))
 }
 
+pub fn deref_pat(pat: ast::Pat) -> ast::Pat {
+    ast_from_text(&format!("fn f(deref!({pat}): ())"))
+}
+
 pub fn paren_pat(pat: ast::Pat) -> ast::ParenPat {
     ast_from_text(&format!("fn f(({pat}): ())"))
 }
