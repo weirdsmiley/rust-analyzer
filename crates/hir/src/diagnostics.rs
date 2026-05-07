@@ -104,6 +104,7 @@ diagnostics![AnyDiagnostic<'db> ->
     BreakOutsideOfLoop,
     CastToUnsized<'db>,
     ExpectedFunction<'db>,
+    FunctionalRecordUpdateOnNonStruct,
     GenericDefaultRefersToSelf,
     InactiveCode,
     IncoherentImpl,
@@ -299,6 +300,11 @@ pub struct MismatchedArrayPatLen {
 pub struct ExpectedFunction<'db> {
     pub call: InFile<ExprOrPatPtr>,
     pub found: Type<'db>,
+}
+
+#[derive(Debug)]
+pub struct FunctionalRecordUpdateOnNonStruct {
+    pub base_expr: InFile<ExprOrPatPtr>,
 }
 
 #[derive(Debug)]
@@ -854,6 +860,9 @@ impl<'db> AnyDiagnostic<'db> {
             }
             &InferenceDiagnostic::NonExhaustiveRecordExpr { expr } => {
                 NonExhaustiveRecordExpr { expr: expr_syntax(expr)? }.into()
+            }
+            &InferenceDiagnostic::FunctionalRecordUpdateOnNonStruct { base_expr } => {
+                FunctionalRecordUpdateOnNonStruct { base_expr: expr_syntax(base_expr)? }.into()
             }
             InferenceDiagnostic::TypedHole { expr, expected } => {
                 let expr = expr_syntax(*expr)?;
