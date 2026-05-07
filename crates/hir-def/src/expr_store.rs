@@ -28,14 +28,18 @@ use tt::TextRange;
 use crate::{
     AdtId, BlockId, ExpressionStoreOwnerId, GenericDefId, SyntheticSyntax,
     db::DefDatabase,
-    expr_store::path::Path,
+    expr_store::path::{AssociatedTypeBinding, GenericArg, GenericArgs, NormalPath, Path},
     hir::{
         Array, AsmOperand, Binding, BindingId, Expr, ExprId, ExprOrPatId, InlineAsm, Label,
-        LabelId, MatchArm, Pat, PatId, RecordFieldPat, RecordLitField, RecordSpread, Statement,
+        LabelId, MatchArm, OffsetOf, Pat, PatId, RecordFieldPat, RecordLitField, RecordSpread,
+        Statement,
     },
     nameres::{DefMap, block_def_map},
     signatures::VariantFields,
-    type_ref::{LifetimeRef, LifetimeRefId, PathId, TypeRef, TypeRefId},
+    type_ref::{
+        ArrayType, ConstRef, FnType, LifetimeRef, LifetimeRefId, PathId, RefType, TypeBound,
+        TypeRef, TypeRefId, UseArgRef,
+    },
 };
 
 pub use self::body::{Body, BodySourceMap};
@@ -602,38 +606,46 @@ impl ExpressionStore {
         });
     }
 
-    pub fn walk_pats_shallow(&self, pat_id: PatId, mut f: impl FnMut(PatId)) {
+    pub fn visit_pat_children(&self, pat_id: PatId, mut visitor: impl StoreVisitor) {
         // Do not use `..` patterns or field accesses here, only destructuring, to ensure we cover all cases
         // (we've had multiple bugs with this in the past).
         let pat = &self[pat_id];
         match pat {
-            Pat::Range { start: _, end: _, range_type: _ }
-            | Pat::Lit(_)
-            | Pat::Path(_)
-            | Pat::ConstBlock(_)
-            | Pat::Wild
-            | Pat::Missing
-            | Pat::Rest
-            | Pat::Expr(_) => {}
-            &Pat::Bind { subpat, id: _ } => {
-                if let Some(subpat) = subpat {
-                    f(subpat);
-                }
+            Pat::Range { start, end, range_type: _ } => {
+                visitor.on_expr_opt(*start);
+                visitor.on_expr_opt(*end);
             }
-            Pat::Or(args)
-            | Pat::Tuple { args, ellipsis: _ }
-            | Pat::TupleStruct { args, ellipsis: _, path: _ } => {
-                args.iter().copied().for_each(f);
+            Pat::Lit(expr) | Pat::ConstBlock(expr) | Pat::Expr(expr) => visitor.on_expr(*expr),
+            Pat::Path(_) | Pat::Wild | Pat::Missing | Pat::Rest => {}
+            &Pat::Bind { subpat, id: _ } => visitor.on_pat_opt(subpat),
+            Pat::Or(args) | Pat::Tuple { args, ellipsis: _ } => visitor.on_pats(args),
+            Pat::TupleStruct { args, ellipsis: _, path } => {
+                visitor.on_pats(args);
+                visitor.on_path(path);
             }
-            Pat::Ref { pat, mutability: _ } => f(*pat),
+            Pat::Ref { pat, mutability: _ } => visitor.on_pat(*pat),
             Pat::Slice { prefix, slice, suffix } => {
-                let total_iter = prefix.iter().chain(slice.iter()).chain(suffix.iter());
-                total_iter.copied().for_each(f);
+                visitor.on_pats(prefix);
+                visitor.on_pat_opt(*slice);
+                visitor.on_pats(suffix);
             }
-            Pat::Record { args, ellipsis: _, path: _ } => {
-                args.iter().for_each(|RecordFieldPat { pat, name: _ }| f(*pat));
+            Pat::Record { args, ellipsis: _, path } => {
+                args.iter().for_each(|RecordFieldPat { pat, name: _ }| visitor.on_pat(*pat));
+                visitor.on_path(path);
             }
-            Pat::Box { inner } | Pat::Deref { inner } => f(*inner),
+            Pat::Box { inner } | Pat::Deref { inner } => visitor.on_pat(*inner),
+        }
+    }
+
+    pub fn walk_pats_shallow(&self, pat_id: PatId, f: impl FnMut(PatId)) {
+        return self.visit_pat_children(pat_id, Visitor(f));
+
+        struct Visitor<F>(F);
+
+        impl<F: FnMut(PatId)> StoreVisitor for Visitor<F> {
+            fn on_pat(&mut self, pat: PatId) {
+                (self.0)(pat);
+            }
         }
     }
 
@@ -659,16 +671,13 @@ impl ExpressionStore {
         self.expr_only.as_ref()?.binding_owners.get(&id).copied()
     }
 
-    fn walk_child_exprs_impl(&self, expr_id: ExprId, mut visitor: impl ExprVisitor) {
+    pub fn visit_expr_children(&self, expr_id: ExprId, mut visitor: impl StoreVisitor) {
         // Do not use `..` patterns or field accesses here, only destructuring, to ensure we cover all cases
         // (we've had multiple bugs with this in the past).
         match &self[expr_id] {
-            Expr::Continue { label: _ }
-            | Expr::Missing
-            | Expr::Path(_)
-            | Expr::OffsetOf(_)
-            | Expr::Literal(_)
-            | Expr::Underscore => {}
+            Expr::OffsetOf(OffsetOf { container, fields: _ }) => visitor.on_type(*container),
+            Expr::Path(path) => visitor.on_path(path),
+            Expr::Continue { label: _ } | Expr::Missing | Expr::Literal(_) | Expr::Underscore => {}
             Expr::InlineAsm(InlineAsm { operands, options: _, kind: _ }) => {
                 operands.iter().for_each(|(_, op)| match op {
                     AsmOperand::In { expr, reg: _ }
@@ -696,10 +705,11 @@ impl ExpressionStore {
             | Expr::Unsafe { statements, tail, id: _ } => {
                 for stmt in statements {
                     match stmt {
-                        Statement::Let { initializer, else_branch, pat, type_ref: _ } => {
+                        Statement::Let { initializer, else_branch, pat, type_ref } => {
                             visitor.on_expr_opt(*initializer);
                             visitor.on_expr_opt(*else_branch);
                             visitor.on_pat(*pat);
+                            visitor.on_type_opt(*type_ref);
                         }
                         Statement::Expr { expr: expression, has_semi: _ } => {
                             visitor.on_expr(*expression)
@@ -714,9 +724,10 @@ impl ExpressionStore {
                 visitor.on_expr(*callee);
                 visitor.on_exprs(args);
             }
-            Expr::MethodCall { receiver, args, generic_args: _, method_name: _ } => {
+            Expr::MethodCall { receiver, args, generic_args, method_name: _ } => {
                 visitor.on_expr(*receiver);
                 visitor.on_exprs(args);
+                visitor.on_generic_args_opt(generic_args);
             }
             Expr::Match { expr, arms } => {
                 visitor.on_expr(*expr);
@@ -731,7 +742,7 @@ impl ExpressionStore {
             | Expr::Yield { expr }
             | Expr::Yeet { expr } => visitor.on_expr_opt(*expr),
             Expr::Become { expr } => visitor.on_expr(*expr),
-            Expr::RecordLit { fields, spread, path: _ } => {
+            Expr::RecordLit { fields, spread, path } => {
                 for RecordLitField { name: _, expr } in fields.iter() {
                     visitor.on_expr(*expr);
                 }
@@ -739,17 +750,13 @@ impl ExpressionStore {
                     RecordSpread::Expr(expr) => visitor.on_expr(*expr),
                     RecordSpread::None | RecordSpread::FieldDefaults => {}
                 }
+                visitor.on_path(path);
             }
-            Expr::Closure {
-                body,
-                args,
-                arg_types: _,
-                capture_by: _,
-                closure_kind: _,
-                ret_type: _,
-            } => {
+            Expr::Closure { body, args, arg_types, ret_type, capture_by: _, closure_kind: _ } => {
                 visitor.on_expr(*body);
                 visitor.on_pats(args);
+                arg_types.iter().for_each(|arg_type| visitor.on_type_opt(*arg_type));
+                visitor.on_type_opt(*ret_type);
             }
             Expr::BinaryOp { lhs, rhs, op: _ } => {
                 visitor.on_expr(*lhs);
@@ -763,9 +770,12 @@ impl ExpressionStore {
                 visitor.on_expr(*base);
                 visitor.on_expr(*index);
             }
+            Expr::Cast { expr, type_ref } => {
+                visitor.on_expr(*expr);
+                visitor.on_type(*type_ref);
+            }
             Expr::Field { expr, name: _ }
             | Expr::Await { expr }
-            | Expr::Cast { expr, type_ref: _ }
             | Expr::Ref { expr, mutability: _, rawness: _ }
             | Expr::UnaryOp { expr, op: _ }
             | Expr::Box { expr }
@@ -777,7 +787,7 @@ impl ExpressionStore {
                 Array::ElementList { elements } => visitor.on_exprs(elements),
                 Array::Repeat { initializer, repeat } => {
                     visitor.on_expr(*initializer);
-                    visitor.on_expr(*repeat)
+                    visitor.on_anon_const_expr(*repeat)
                 }
             },
             &Expr::Assignment { target, value } => {
@@ -789,14 +799,14 @@ impl ExpressionStore {
 
     /// Walks the immediate children expressions and calls `f` for each child expression.
     pub fn walk_child_exprs(&self, expr_id: ExprId, callback: impl FnMut(ExprId)) {
-        return self.walk_child_exprs_impl(expr_id, Visitor { callback, store: self });
+        return self.visit_expr_children(expr_id, Visitor { callback, store: self });
 
         struct Visitor<'a, F> {
             callback: F,
             store: &'a ExpressionStore,
         }
 
-        impl<F: FnMut(ExprId)> ExprVisitor for Visitor<'_, F> {
+        impl<F: FnMut(ExprId)> StoreVisitor for Visitor<'_, F> {
             fn on_expr(&mut self, expr: ExprId) {
                 (self.callback)(expr);
             }
@@ -810,48 +820,61 @@ impl ExpressionStore {
     /// Walks the immediate children expressions and calls `f` for each child expression but does
     /// not walk expressions within patterns.
     pub fn walk_child_exprs_without_pats(&self, expr_id: ExprId, callback: impl FnMut(ExprId)) {
-        return self.walk_child_exprs_impl(expr_id, Visitor { callback });
+        return self.visit_expr_children(expr_id, Visitor { callback });
 
         struct Visitor<F> {
             callback: F,
         }
 
-        impl<F: FnMut(ExprId)> ExprVisitor for Visitor<F> {
+        impl<F: FnMut(ExprId)> StoreVisitor for Visitor<F> {
+            fn on_expr(&mut self, expr: ExprId) {
+                (self.callback)(expr);
+            }
+        }
+    }
+
+    pub fn walk_exprs_in_pat(&self, pat_id: PatId, callback: impl FnMut(ExprId)) {
+        return Visitor { callback, store: self }.on_pat(pat_id);
+
+        struct Visitor<'a, F> {
+            callback: F,
+            store: &'a ExpressionStore,
+        }
+
+        impl<F: FnMut(ExprId)> StoreVisitor for Visitor<'_, F> {
             fn on_expr(&mut self, expr: ExprId) {
                 (self.callback)(expr);
             }
 
-            fn on_pat(&mut self, _pat: PatId) {}
+            fn on_pat(&mut self, pat: PatId) {
+                self.store.visit_pat_children(pat, self);
+            }
         }
     }
 
-    pub fn walk_exprs_in_pat(&self, pat_id: PatId, mut f: impl FnMut(ExprId)) {
-        self.walk_pats(pat_id, &mut |pat| match self[pat] {
-            Pat::Expr(expr) | Pat::ConstBlock(expr) | Pat::Lit(expr) => {
-                f(expr);
+    pub fn visit_type_ref_children(&self, type_ref: TypeRefId, mut visitor: impl StoreVisitor) {
+        match &self[type_ref] {
+            TypeRef::Never | TypeRef::Placeholder | TypeRef::TypeParam(_) | TypeRef::Error => {}
+            TypeRef::Tuple(types) => visitor.on_types(types),
+            TypeRef::Path(path) => visitor.on_path(path),
+            TypeRef::RawPtr(inner, _) | TypeRef::Slice(inner) => visitor.on_type(*inner),
+            TypeRef::Reference(ref_type) => {
+                let RefType { ty, lifetime, mutability: _ } = &**ref_type;
+                visitor.on_type(*ty);
+                visitor.on_lifetime_opt(*lifetime);
             }
-            Pat::Range { start, end, range_type: _ } => {
-                if let Some(start) = start {
-                    f(start);
-                }
-                if let Some(end) = end {
-                    f(end);
-                }
+            TypeRef::Array(ArrayType { ty, len: ConstRef { expr: len } }) => {
+                visitor.on_type(*ty);
+                visitor.on_anon_const_expr(*len);
             }
-            Pat::Missing
-            | Pat::Rest
-            | Pat::Wild
-            | Pat::Tuple { .. }
-            | Pat::Or(_)
-            | Pat::Record { .. }
-            | Pat::Slice { .. }
-            | Pat::Path(_)
-            | Pat::Bind { .. }
-            | Pat::TupleStruct { .. }
-            | Pat::Ref { .. }
-            | Pat::Box { .. }
-            | Pat::Deref { .. } => {}
-        });
+            TypeRef::Fn(fn_type) => {
+                let FnType { params, is_varargs: _, is_unsafe: _, abi: _ } = &**fn_type;
+                params.iter().for_each(|(_, param_ty)| visitor.on_type(*param_ty));
+            }
+            TypeRef::ImplTrait(bounds) | TypeRef::DynTrait(bounds) => {
+                visitor.on_type_bounds(bounds)
+            }
+        }
     }
 
     #[inline]
@@ -918,21 +941,127 @@ impl ExpressionStore {
     }
 }
 
-trait ExprVisitor {
-    fn on_expr(&mut self, expr: ExprId);
-    fn on_pat(&mut self, pat: PatId);
+pub trait StoreVisitor {
+    fn on_expr(&mut self, expr: ExprId) {
+        let _ = expr;
+    }
+    fn on_anon_const_expr(&mut self, expr: ExprId) {
+        self.on_expr(expr);
+    }
+    fn on_pat(&mut self, pat: PatId) {
+        let _ = pat;
+    }
+    fn on_type(&mut self, ty: TypeRefId) {
+        let _ = ty;
+    }
+    fn on_lifetime(&mut self, lifetime: LifetimeRefId) {
+        let _ = lifetime;
+    }
+}
+
+impl<V: StoreVisitor> StoreVisitor for &mut V {
+    fn on_expr(&mut self, expr: ExprId) {
+        V::on_expr(self, expr);
+    }
+    fn on_anon_const_expr(&mut self, expr: ExprId) {
+        V::on_anon_const_expr(self, expr);
+    }
+    fn on_pat(&mut self, pat: PatId) {
+        V::on_pat(self, pat);
+    }
+    fn on_type(&mut self, ty: TypeRefId) {
+        V::on_type(self, ty);
+    }
+    fn on_lifetime(&mut self, lifetime: LifetimeRefId) {
+        V::on_lifetime(self, lifetime);
+    }
+}
+
+trait StoreVisitorExt: StoreVisitor {
+    fn on_generic_args(&mut self, args: &GenericArgs) {
+        let GenericArgs { args, bindings, parenthesized: _, has_self_type: _ } = args;
+        for arg in args {
+            match arg {
+                GenericArg::Type(arg) => self.on_type(*arg),
+                GenericArg::Const(ConstRef { expr }) => self.on_anon_const_expr(*expr),
+                GenericArg::Lifetime(arg) => self.on_lifetime(*arg),
+            }
+        }
+        for AssociatedTypeBinding { name: _, args, type_ref, bounds } in bindings {
+            self.on_generic_args_opt(args);
+            self.on_type_opt(*type_ref);
+            self.on_type_bounds(bounds);
+        }
+    }
+
+    fn on_type_bound(&mut self, bound: &TypeBound) {
+        match bound {
+            TypeBound::Path(path_id, _) => self.on_type(path_id.type_ref()),
+            TypeBound::ForLifetime(_, path_id) => self.on_type(path_id.type_ref()),
+            TypeBound::Lifetime(lifetime) => self.on_lifetime(*lifetime),
+            TypeBound::Use(args) => {
+                for arg in args {
+                    match arg {
+                        UseArgRef::Lifetime(lifetime) => self.on_lifetime(*lifetime),
+                        UseArgRef::Name(_) => {}
+                    }
+                }
+            }
+            TypeBound::Error => {}
+        }
+    }
+
+    fn on_path(&mut self, path: &Path) {
+        match path {
+            Path::Normal(path) => {
+                let NormalPath { generic_args, type_anchor, mod_path: _ } = &**path;
+                generic_args.iter().for_each(|generic_arg| self.on_generic_args_opt(generic_arg));
+                self.on_type_opt(*type_anchor);
+            }
+            Path::BarePath(_) | Path::LangItem(..) => {}
+        }
+    }
+
     fn on_expr_opt(&mut self, expr: Option<ExprId>) {
         if let Some(expr) = expr {
             self.on_expr(expr);
         }
     }
+    fn on_pat_opt(&mut self, pat: Option<PatId>) {
+        if let Some(pat) = pat {
+            self.on_pat(pat);
+        }
+    }
+    fn on_type_opt(&mut self, ty: Option<TypeRefId>) {
+        if let Some(ty) = ty {
+            self.on_type(ty);
+        }
+    }
+    fn on_lifetime_opt(&mut self, lifetime: Option<LifetimeRefId>) {
+        if let Some(lifetime) = lifetime {
+            self.on_lifetime(lifetime);
+        }
+    }
+    fn on_generic_args_opt(&mut self, args: &Option<impl Borrow<GenericArgs>>) {
+        if let Some(args) = args {
+            self.on_generic_args(args.borrow());
+        }
+    }
+
     fn on_exprs(&mut self, exprs: impl IntoIterator<Item: Borrow<ExprId>>) {
         exprs.into_iter().for_each(|expr| self.on_expr(*expr.borrow()));
     }
-    fn on_pats(&mut self, exprs: impl IntoIterator<Item: Borrow<PatId>>) {
-        exprs.into_iter().for_each(|expr| self.on_pat(*expr.borrow()));
+    fn on_pats(&mut self, pats: impl IntoIterator<Item: Borrow<PatId>>) {
+        pats.into_iter().for_each(|pat| self.on_pat(*pat.borrow()));
+    }
+    fn on_types(&mut self, types: impl IntoIterator<Item: Borrow<TypeRefId>>) {
+        types.into_iter().for_each(|ty| self.on_type(*ty.borrow()));
+    }
+    fn on_type_bounds(&mut self, bounds: impl IntoIterator<Item: Borrow<TypeBound>>) {
+        bounds.into_iter().for_each(|bound| self.on_type_bound(bound.borrow()));
     }
 }
+impl<V: StoreVisitor> StoreVisitorExt for V {}
 
 impl Index<ExprId> for ExpressionStore {
     type Output = Expr;

@@ -82,14 +82,16 @@ use crate::{
             expr_use_visitor::{FakeReadCause, Place},
         },
         coerce::{CoerceMany, DynamicCoerceMany},
-        diagnostics::{Diagnostics, InferenceTyLoweringContext as TyLoweringContext},
+        diagnostics::{
+            Diagnostics, InferenceTyLoweringContext as TyLoweringContext,
+            InferenceTyLoweringVarsCtx,
+        },
         expr::ExprIsRead,
         pat::PatOrigin,
         unify::resolve_completely::WriteBackCtxt,
     },
     lower::{
-        ImplTraitIdx, ImplTraitLoweringMode, LifetimeElisionKind, TyLoweringInferVarsCtx,
-        diagnostics::TyLoweringDiagnostic,
+        ImplTraitIdx, ImplTraitLoweringMode, LifetimeElisionKind, diagnostics::TyLoweringDiagnostic,
     },
     method_resolution::CandidateId,
     next_solver::{
@@ -1829,10 +1831,10 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
         f: impl FnOnce(&mut TyLoweringContext<'db, '_>) -> R,
     ) -> R {
         let infer_vars = match types_source {
-            InferenceTyDiagnosticSource::Body => Some(TyLoweringInferVarsCtx {
+            InferenceTyDiagnosticSource::Body => Some(&mut InferenceTyLoweringVarsCtx {
                 table: &mut self.table,
-                type_of_placeholder: &mut self.result.type_of_type_placeholder,
-            }),
+                type_of_type_placeholder: &mut self.result.type_of_type_placeholder,
+            } as _),
             InferenceTyDiagnosticSource::Signature => None,
         };
         let mut ctx = TyLoweringContext::new(
@@ -1914,7 +1916,7 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
             &self.resolver,
             expected_ty,
             &|| self.generics(),
-            Some(self.infcx()),
+            Some(&mut |span| self.table.next_const_var(span)),
             (!(allow_using_generic_params && self.allow_using_generic_params)).then_some(0),
         );
 
@@ -2164,6 +2166,10 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
         value_ns: bool,
     ) -> (Ty<'db>, Option<VariantId>) {
         let interner = self.interner();
+        let mut vars_ctx = InferenceTyLoweringVarsCtx {
+            table: &mut self.table,
+            type_of_type_placeholder: &mut self.result.type_of_type_placeholder,
+        };
         let mut ctx = TyLoweringContext::new(
             self.db,
             &self.resolver,
@@ -2175,10 +2181,7 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
             &self.generics,
             LifetimeElisionKind::Infer,
             self.allow_using_generic_params,
-            Some(TyLoweringInferVarsCtx {
-                table: &mut self.table,
-                type_of_placeholder: &mut self.result.type_of_type_placeholder,
-            }),
+            Some(&mut vars_ctx),
             &self.defined_anon_consts,
         );
 

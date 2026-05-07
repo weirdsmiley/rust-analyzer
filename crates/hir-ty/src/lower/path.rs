@@ -792,7 +792,7 @@ impl<'a, 'b, 'db> PathLoweringContext<'a, 'b, 'db> {
                         {
                             return default;
                         }
-                        self.ctx.ctx.next_ty_var_no_placeholder(span).into()
+                        self.ctx.ctx.next_ty_var(span).into()
                     }
                     GenericParamDataRef::ConstParamData(param) => {
                         if !infer_args

@@ -39,7 +39,7 @@ use la_arena::{Arena, ArenaMap, Idx};
 use path::{PathDiagnosticCallback, PathLoweringContext};
 use rustc_abi::ExternAbi;
 use rustc_ast_ir::Mutability;
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashSet;
 use rustc_type_ir::{
     AliasTyKind, BoundVarIndexKind, DebruijnIndex, ExistentialPredicate, ExistentialProjection,
     ExistentialTraitRef, FnSig, Interner, OutlivesPredicate, TermKind, TyKind, TypeFoldable,
@@ -185,10 +185,15 @@ pub(crate) enum ForbidParamsAfterReason {
     ConstParamTy,
 }
 
-pub(crate) struct TyLoweringInferVarsCtx<'a, 'db> {
-    // Technically we can just put an `&InferCtxt` here, but borrowck constraints requires us to put this:
-    pub(crate) table: &'a mut InferenceTable<'db>,
-    pub(crate) type_of_placeholder: &'a mut FxHashMap<TypeRefId, StoredTy>,
+pub trait TyLoweringInferVarsCtx<'db> {
+    fn next_ty_var(&mut self, span: Span) -> Ty<'db>;
+    fn next_const_var(&mut self, span: Span) -> Const<'db>;
+    fn next_region_var(&mut self, span: Span) -> Region<'db>;
+
+    #[expect(private_interfaces)]
+    fn as_table(&mut self) -> Option<&mut InferenceTable<'db>> {
+        None
+    }
 }
 
 pub struct TyLoweringContext<'db, 'a> {
@@ -210,7 +215,7 @@ pub struct TyLoweringContext<'db, 'a> {
     forbid_params_after: Option<u32>,
     forbid_params_after_reason: ForbidParamsAfterReason,
     pub(crate) defined_anon_consts: ThinVec<AnonConstId>,
-    infer_vars: Option<TyLoweringInferVarsCtx<'a, 'db>>,
+    infer_vars: Option<&'a mut dyn TyLoweringInferVarsCtx<'db>>,
 }
 
 impl<'db, 'a> TyLoweringContext<'db, 'a> {
@@ -286,9 +291,9 @@ impl<'db, 'a> TyLoweringContext<'db, 'a> {
         self.forbid_params_after_reason = reason;
     }
 
-    pub(crate) fn with_infer_vars_behavior(
+    pub fn with_infer_vars_behavior(
         mut self,
-        behavior: Option<TyLoweringInferVarsCtx<'a, 'db>>,
+        behavior: Option<&'a mut dyn TyLoweringInferVarsCtx<'db>>,
     ) -> Self {
         self.infer_vars = behavior;
         self
@@ -300,26 +305,12 @@ impl<'db, 'a> TyLoweringContext<'db, 'a> {
 
     #[track_caller]
     pub(crate) fn expect_table(&mut self) -> &mut InferenceTable<'db> {
-        self.infer_vars.as_mut().unwrap().table
+        self.infer_vars.as_mut().unwrap().as_table().unwrap()
     }
 
-    fn next_ty_var(&mut self, type_ref: TypeRefId) -> Ty<'db> {
+    fn next_ty_var(&mut self, span: Span) -> Ty<'db> {
         match &mut self.infer_vars {
-            Some(infer_vars) => {
-                let var = infer_vars.table.next_ty_var(type_ref.into());
-                infer_vars.type_of_placeholder.insert(type_ref, var.store());
-                var
-            }
-            None => {
-                // FIXME: Emit an error: no infer vars allowed here.
-                self.types.types.error
-            }
-        }
-    }
-
-    fn next_ty_var_no_placeholder(&mut self, span: Span) -> Ty<'db> {
-        match &mut self.infer_vars {
-            Some(infer_vars) => infer_vars.table.next_ty_var(span),
+            Some(infer_vars) => infer_vars.next_ty_var(span),
             None => {
                 // FIXME: Emit an error: no infer vars allowed here.
                 self.types.types.error
@@ -329,7 +320,7 @@ impl<'db, 'a> TyLoweringContext<'db, 'a> {
 
     fn next_const_var(&mut self, span: Span) -> Const<'db> {
         match &mut self.infer_vars {
-            Some(infer_vars) => infer_vars.table.next_const_var(span),
+            Some(infer_vars) => infer_vars.next_const_var(span),
             None => {
                 // FIXME: Emit an error: no infer vars allowed here.
                 self.types.consts.error
@@ -339,7 +330,7 @@ impl<'db, 'a> TyLoweringContext<'db, 'a> {
 
     fn next_region_var(&mut self, span: Span) -> Region<'db> {
         match &mut self.infer_vars {
-            Some(infer_vars) => infer_vars.table.next_region_var(span),
+            Some(infer_vars) => infer_vars.next_region_var(span),
             None => {
                 // FIXME: Emit an error: no infer vars allowed here.
                 self.types.regions.error
@@ -366,6 +357,13 @@ impl<'db, 'a> TyLoweringContext<'db, 'a> {
     }
 
     pub(crate) fn lower_const(&mut self, const_ref: ConstRef, const_type: Ty<'db>) -> Const<'db> {
+        #[expect(clippy::manual_map, reason = "a `map()` here generates a borrowck error")]
+        let create_var = match &mut self.infer_vars {
+            Some(infer_vars) => Some(
+                (&mut |span| infer_vars.next_const_var(span)) as &mut dyn FnMut(Span) -> Const<'db>,
+            ),
+            None => None,
+        };
         let konst = create_anon_const(
             self.interner,
             self.def,
@@ -373,8 +371,8 @@ impl<'db, 'a> TyLoweringContext<'db, 'a> {
             const_ref.expr,
             self.resolver,
             const_type,
-            &|| self.generics(),
-            self.infer_vars.as_ref().map(|vars_ctx| &vars_ctx.table.infer_ctxt),
+            &|| self.generics.get_or_init(|| generics(self.db, self.generic_def)),
+            create_var,
             self.forbid_params_after,
         );
 
@@ -470,7 +468,7 @@ impl<'db, 'a> TyLoweringContext<'db, 'a> {
                     ref_.lifetime.map_or(self.types.regions.error, |lr| self.lower_lifetime(lr));
                 Ty::new_ref(interner, lifetime, inner_ty, lower_mutability(ref_.mutability))
             }
-            TypeRef::Placeholder => self.next_ty_var(type_ref_id),
+            TypeRef::Placeholder => self.next_ty_var(type_ref_id.into()),
             TypeRef::Fn(fn_) => self.lower_fn_ptr(fn_),
             TypeRef::DynTrait(bounds) => self.lower_dyn_trait(bounds),
             TypeRef::ImplTrait(bounds) => {

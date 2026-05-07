@@ -19,7 +19,7 @@ use rustc_type_ir::inherent::{Const as _, GenericArgs as _, IntoKind, Ty as _};
 use stdx::never;
 
 use crate::{
-    ParamEnvAndCrate,
+    ParamEnvAndCrate, Span,
     db::{AnonConstId, AnonConstLoc, GeneralConstId, HirDatabase},
     display::DisplayTarget,
     generics::Generics,
@@ -27,7 +27,7 @@ use crate::{
     next_solver::{
         Allocation, Const, ConstKind, Consts, DbInterner, DefaultAny, GenericArgs, ParamConst,
         ScalarInt, StoredAllocation, StoredEarlyBinder, StoredGenericArgs, Ty, TyKind,
-        UnevaluatedConst, ValTreeKind, default_types, infer::InferCtxt,
+        UnevaluatedConst, ValTreeKind, default_types,
     },
     traits::StoredParamEnvAndCrate,
 };
@@ -351,13 +351,13 @@ pub(crate) fn create_anon_const<'a, 'db>(
     resolver: &Resolver<'db>,
     expected_ty: Ty<'db>,
     generics: &dyn Fn() -> &'a Generics<'db>,
-    infcx: Option<&InferCtxt<'db>>,
+    create_var: Option<&mut dyn FnMut(Span) -> Const<'db>>,
     forbid_params_after: Option<u32>,
 ) -> Result<Const<'db>, CreateConstError<'db>> {
     match &store[expr] {
         Expr::Literal(literal) => intern_const_ref(interner, literal, expected_ty),
-        Expr::Underscore => match infcx {
-            Some(infcx) => Ok(infcx.next_const_var(expr.into())),
+        Expr::Underscore => match create_var {
+            Some(create_var) => Ok(create_var(expr.into())),
             None => Err(CreateConstError::UnderscoreExpr),
         },
         Expr::Path(path)
