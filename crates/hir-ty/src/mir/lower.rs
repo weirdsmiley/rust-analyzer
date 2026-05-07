@@ -2320,7 +2320,7 @@ pub fn mir_body_query<'db>(db: &'db dyn HirDatabase, def: InferBodyId) -> Result
     let (store, root_expr, self_param, params) = match def {
         InferBodyId::DefWithBodyId(def) => {
             let body = Body::of(db, def);
-            (&**body, body.root_expr(), body.self_param, &*body.params)
+            (&**body, body.root_expr(), body.self_param(), &*body.params)
         }
         InferBodyId::AnonConstId(def) => {
             let loc = def.loc(db);

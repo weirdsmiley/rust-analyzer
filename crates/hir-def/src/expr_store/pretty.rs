@@ -92,7 +92,7 @@ pub fn print_body_hir(
     };
     if let DefWithBodyId::FunctionId(_) = owner {
         p.buf.push('(');
-        if let Some(self_param) = body.self_param {
+        if let Some(self_param) = body.self_param() {
             p.print_binding(self_param);
             p.buf.push_str(", ");
         }

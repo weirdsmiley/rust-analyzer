@@ -472,7 +472,7 @@ impl<'db> SourceAnalyzer<'db> {
     ) -> Option<Type<'db>> {
         let binding = match self.body_or_sig.as_ref()? {
             BodyOrSig::Sig { .. } | BodyOrSig::VariantFields { .. } => return None,
-            BodyOrSig::Body { body, .. } => body.self_param?,
+            BodyOrSig::Body { body, .. } => body.self_param()?,
         };
         let ty = self.infer()?.binding_ty(binding);
         Some(Type::new_with_resolver(db, &self.resolver, ty))

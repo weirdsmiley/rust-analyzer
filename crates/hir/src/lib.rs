@@ -3000,14 +3000,14 @@ impl<'db> Param<'db> {
             Callee::Def(CallableDefId::FunctionId(it)) => {
                 let parent = DefWithBodyId::FunctionId(it);
                 let body = Body::of(db, parent);
-                if let Some(self_param) = body.self_param.filter(|_| self.idx == 0) {
+                if let Some(self_param) = body.self_param().filter(|_| self.idx == 0) {
                     Some(Local {
                         parent: parent.into(),
                         parent_infer: parent.into(),
                         binding_id: self_param,
                     })
                 } else if let Pat::Bind { id, .. } =
-                    &body[body.params[self.idx - body.self_param.is_some() as usize]]
+                    &body[body.params[self.idx - body.self_param().is_some() as usize]]
                 {
                     Some(Local {
                         parent: parent.into(),
@@ -4466,8 +4466,8 @@ impl Local {
             }
             ExpressionStoreOwnerId::Body(def_with_body_id) => {
                 b = Body::with_source_map(db, def_with_body_id);
-                if let Some((param, source)) = b.0.self_param.zip(b.1.self_param_syntax())
-                    && param == self.binding_id
+                if b.0.self_params.contains(&self.binding_id)
+                    && let Some(source) = b.1.self_param_syntax()
                 {
                     let root = source.file_syntax(db);
                     return vec![LocalSource {
@@ -4507,8 +4507,8 @@ impl Local {
             }
             ExpressionStoreOwnerId::Body(def_with_body_id) => {
                 b = Body::with_source_map(db, def_with_body_id);
-                if let Some((param, source)) = b.0.self_param.zip(b.1.self_param_syntax())
-                    && param == self.binding_id
+                if b.0.self_params.contains(&self.binding_id)
+                    && let Some(source) = b.1.self_param_syntax()
                 {
                     let root = source.file_syntax(db);
                     return LocalSource {

@@ -147,7 +147,7 @@ impl ExprScopes {
             ),
         };
         let mut root = scopes.root_scope();
-        if let Some(self_param) = body.self_param {
+        if let Some(self_param) = body.self_param() {
             scopes.add_bindings(body, root, self_param, body.binding_hygiene(self_param));
         }
         scopes.add_params_bindings(body, root, &body.params);
