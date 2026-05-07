@@ -1093,7 +1093,7 @@ impl Foo { fn foo(&mut self) { let _: fn(&mut Self) = |this| { $0 } } }"#,
                 me this.foo() fn(&mut self)
                 lc self            &mut Foo
                 lc this            &mut Foo
-                md core
+                md core::
                 sp Self                 Foo
                 st Foo                  Foo
                 tt Fn
@@ -1117,7 +1117,7 @@ impl Foo { fn foo(&self) { let _: fn(&Self) = |foo| { $0 } } }"#,
                 me self.foo() fn(&self)
                 lc foo             &Foo
                 lc self            &Foo
-                md core
+                md core::
                 sp Self             Foo
                 st Foo              Foo
                 tt Fn
@@ -1137,7 +1137,7 @@ impl Foo { fn foo(&self) { let _: fn(&Self) = || { $0 } } }"#,
                 fd self.field       i32
                 me self.foo() fn(&self)
                 lc self            &Foo
-                md core
+                md core::
                 sp Self             Foo
                 st Foo              Foo
                 tt Fn
@@ -1159,7 +1159,7 @@ impl Foo { fn foo(&self) { let _: fn(&Self, &Self) = |foo, other| { $0 } } }"#,
                 lc foo             &Foo
                 lc other           &Foo
                 lc self            &Foo
-                md core
+                md core::
                 sp Self             Foo
                 st Foo              Foo
                 tt Fn

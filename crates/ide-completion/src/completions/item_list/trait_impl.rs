@@ -1744,7 +1744,7 @@ impl Trait for () {
                 me fn bar(..)
                 me fn baz(..)
                 me fn foo(..)
-                md proc_macros
+                md proc_macros::
                 kw crate::
                 kw self::
             "#]],
