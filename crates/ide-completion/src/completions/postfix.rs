@@ -12,7 +12,7 @@ use ide_db::{
     text_edit::TextEdit,
     ty_filter::TryEnum,
 };
-use itertools::Itertools;
+use itertools::{Either, Itertools};
 use stdx::never;
 use syntax::{
     SmolStr,
@@ -468,6 +468,11 @@ fn include_references(initial_element: &ast::Expr) -> (ast::Expr, String) {
                 .syntax()
                 .children_with_tokens()
                 .filter(|it| Some(it) != last_child_or_token.as_ref())
+                .flat_map(|it| {
+                    let has_ws = it.next_sibling_or_token().is_some_and(|it| it.kind().is_trivia());
+                    let need_ws = !has_ws && it.kind().is_any_identifier();
+                    itertools::chain([Either::Left(it)], need_ws.then_some(Either::Right(" ")))
+                })
                 .format("")
                 .to_smolstr()
                 .as_str(),
@@ -1568,6 +1573,15 @@ fn main() {
             "group",
             r#"fn main() { &raw const Foo::bar::SOME_CONST.$0 }"#,
             r#"fn main() { (&raw const Foo::bar::SOME_CONST) }"#,
+        );
+
+        check_edit_with_config(
+            CompletionConfig { snippets: vec![snippet.clone()], ..TEST_CONFIG },
+            "group",
+            r#"macro_rules! id { ($($t:tt)*) => ($($t)*); }
+fn main() { id!(&raw const Foo::bar::SOME_CONST.$0) }"#,
+            r#"macro_rules! id { ($($t:tt)*) => ($($t)*); }
+fn main() { id!((&raw const Foo::bar::SOME_CONST)) }"#,
         );
     }
 
