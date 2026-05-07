@@ -75,7 +75,7 @@ impl<'db> InferenceContext<'_, 'db> {
     }
 
     fn diverging_fallback_behavior(&self) -> DivergingFallbackBehavior {
-        if self.krate().data(self.db).edition.at_least_2024() {
+        if self.edition.at_least_2024() {
             return DivergingFallbackBehavior::ToNever;
         }
 
