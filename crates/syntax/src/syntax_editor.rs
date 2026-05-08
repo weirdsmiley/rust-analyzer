@@ -203,6 +203,14 @@ impl SyntaxEditor {
     pub fn finish(self) -> SyntaxEdit {
         edit_algo::apply_edits(self)
     }
+
+    pub fn deleted(&self, element: impl Element) -> bool {
+        let element = element.syntax_element();
+        self.changes
+            .borrow()
+            .iter()
+            .any(|change| matches!(change, Change::Replace(existing, None) if *existing == element))
+    }
 }
 
 /// Represents a completed [`SyntaxEditor`] operation.
