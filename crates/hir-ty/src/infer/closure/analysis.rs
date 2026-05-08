@@ -920,8 +920,8 @@ impl<'a, 'db> InferenceContext<'a, 'db> {
         self.result.closures_data.insert(closure_def_id, closure_data);
     }
 
-    fn normalize_capture_place(&self, span: Span, place: Place) -> Place {
-        let mut place = self.infcx().resolve_vars_if_possible(place);
+    fn normalize_capture_place(&mut self, span: Span, place: Place) -> Place {
+        let place = self.infcx().resolve_vars_if_possible(place);
 
         // In the new solver, types in HIR `Place`s can contain unnormalized aliases,
         // which can ICE later (e.g. when projecting fields for diagnostics).
@@ -945,11 +945,8 @@ impl<'a, 'db> InferenceContext<'a, 'db> {
                 }
                 normalized
             }
-            Err(_errors) => {
-                place.base_ty = self.types.types.error.store();
-                for proj in &mut place.projections {
-                    proj.ty = self.types.types.error.store();
-                }
+            Err(errors) => {
+                self.table.trait_errors.extend(errors);
                 place
             }
         }
@@ -1002,7 +999,7 @@ impl<'a, 'db> InferenceContext<'a, 'db> {
         }
     }
 
-    fn place_for_root_variable(&self, closure_def_id: ExprId, var_hir_id: BindingId) -> Place {
+    fn place_for_root_variable(&mut self, closure_def_id: ExprId, var_hir_id: BindingId) -> Place {
         let place = Place {
             base_ty: self.result.binding_ty(var_hir_id).store(),
             base: PlaceBase::Upvar { closure: closure_def_id, var_id: var_hir_id },

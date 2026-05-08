@@ -134,7 +134,7 @@ pub(crate) struct InferenceTable<'db> {
     pub(crate) infer_ctxt: InferCtxt<'db>,
     pub(super) fulfillment_cx: FulfillmentCtxt<'db>,
     pub(super) diverging_type_vars: FxHashSet<Ty<'db>>,
-    trait_errors: Vec<NextSolverError<'db>>,
+    pub(super) trait_errors: Vec<NextSolverError<'db>>,
 }
 
 impl<'db> InferenceTable<'db> {

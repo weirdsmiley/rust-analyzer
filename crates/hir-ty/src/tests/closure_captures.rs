@@ -600,3 +600,20 @@ fn f() {
         expect!["77..110;46..47;96..97 ByRef(Immutable) b &'<erased> i32"],
     );
 }
+
+#[test]
+fn fail_to_normalize_place() {
+    check_closure_captures(
+        r#"
+//- minicore: index, slice
+const FAIL_CONST: usize = loop {};
+struct Foo {
+    arr: [i32; FAIL_CONST],
+}
+fn foo(foo: &Foo) {
+    || { return foo.arr[0] };
+}
+    "#,
+        expect!["102..126;85..88;114..117 ByRef(Immutable) *foo &'<erased> Foo"],
+    );
+}
