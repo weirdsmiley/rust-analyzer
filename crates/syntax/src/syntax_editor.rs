@@ -133,7 +133,19 @@ impl SyntaxEditor {
             !matches!(&element, SyntaxElement::Node(node) if node == &self.root),
             "should not delete root node"
         );
-        self.changes.borrow_mut().push(Change::Replace(element.syntax_element(), None));
+        let mut changes = self.changes.borrow_mut();
+        for change in changes.iter_mut() {
+            if let Change::Replace(existing, replacement) = change
+                && *existing == element
+            {
+                if replacement.is_none() {
+                    return;
+                }
+                *replacement = None;
+                return;
+            }
+        }
+        changes.push(Change::Replace(element, None));
     }
 
     pub fn delete_all(&self, range: RangeInclusive<SyntaxElement>) {
