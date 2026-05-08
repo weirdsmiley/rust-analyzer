@@ -161,9 +161,23 @@ impl SyntaxEditor {
     pub fn replace(&self, old: impl Element, new: impl Element) {
         let old = old.syntax_element();
         debug_assert!(is_ancestor_or_self_of_element(&old, &self.root));
-        self.changes
-            .borrow_mut()
-            .push(Change::Replace(old.syntax_element(), Some(new.syntax_element())));
+        let new = new.syntax_element();
+        let mut changes = self.changes.borrow_mut();
+        for change in changes.iter_mut() {
+            if let Change::Replace(existing, replacement) = change
+                && *existing == old
+            {
+                match replacement {
+                    None => return,
+                    Some(existing_new) if *existing_new == new => return,
+                    Some(existing_new) => {
+                        *existing_new = new;
+                        return;
+                    }
+                }
+            }
+        }
+        changes.push(Change::Replace(old, Some(new)));
     }
 
     pub fn replace_with_many(&self, old: impl Element, new: Vec<SyntaxElement>) {
