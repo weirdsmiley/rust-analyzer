@@ -2,7 +2,7 @@
 //! and a wrapper around [`TyLoweringContext`] ([`InferenceTyLoweringContext`]) that replaces
 //! it and takes care of diagnostics in inference.
 
-use std::cell::RefCell;
+use std::cell::{OnceCell, RefCell};
 use std::ops::{Deref, DerefMut};
 
 use either::Either;
@@ -16,8 +16,9 @@ use thin_vec::ThinVec;
 use crate::{
     InferenceDiagnostic, InferenceTyDiagnosticSource, TyLoweringDiagnostic,
     db::{AnonConstId, HirDatabase},
+    generics::Generics,
     lower::{
-        ForbidParamsAfterReason, LifetimeElisionKind, TyLoweringContext,
+        ForbidParamsAfterReason, LifetimeElisionKind, TyLoweringContext, TyLoweringInferVarsCtx,
         path::{PathDiagnosticCallback, PathLoweringContext},
     },
 };
@@ -71,12 +72,22 @@ impl<'db, 'a> InferenceTyLoweringContext<'db, 'a> {
         source: InferenceTyDiagnosticSource,
         def: ExpressionStoreOwnerId,
         generic_def: GenericDefId,
+        generics: &'a OnceCell<Generics<'db>>,
         lifetime_elision: LifetimeElisionKind<'db>,
         allow_using_generic_params: bool,
+        infer_vars: Option<TyLoweringInferVarsCtx<'a, 'db>>,
         defined_anon_consts: &'a RefCell<ThinVec<AnonConstId>>,
     ) -> Self {
-        let mut ctx =
-            TyLoweringContext::new(db, resolver, store, def, generic_def, lifetime_elision);
+        let mut ctx = TyLoweringContext::new(
+            db,
+            resolver,
+            store,
+            def,
+            generic_def,
+            generics,
+            lifetime_elision,
+        )
+        .with_infer_vars_behavior(infer_vars);
         if !allow_using_generic_params {
             ctx.forbid_params_after(0, ForbidParamsAfterReason::AnonConst);
         }

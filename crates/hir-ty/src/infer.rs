@@ -50,7 +50,7 @@ use hir_def::{
     layout::Integer,
     resolver::{HasResolver, ResolveValueResult, Resolver, TypeNs, ValueNs},
     signatures::{ConstSignature, EnumSignature, FunctionSignature, StaticSignature},
-    type_ref::{LifetimeRefId, TypeRef, TypeRefId},
+    type_ref::{LifetimeRefId, TypeRefId},
     unstable_features::UnstableFeatures,
 };
 use hir_expand::{mod_path::ModPath, name::Name};
@@ -61,7 +61,7 @@ use rustc_ast_ir::Mutability;
 use rustc_hash::{FxHashMap, FxHashSet};
 use rustc_type_ir::{
     AliasTyKind, TypeFoldable, TypeVisitableExt,
-    inherent::{IntoKind, Ty as _},
+    inherent::{GenericArgs as _, IntoKind, Ty as _},
 };
 use smallvec::SmallVec;
 use span::Edition;
@@ -72,7 +72,6 @@ use crate::{
     ImplTraitId, IncorrectGenericsLenKind, InferBodyId, PathLoweringDiagnostic, Span,
     TargetFeatures,
     closure_analysis::PlaceBase,
-    collect_type_inference_vars,
     consteval::{create_anon_const, path_to_const},
     db::{AnonConstId, GeneralConstId, HirDatabase, InternedOpaqueTyId},
     generics::Generics,
@@ -89,7 +88,8 @@ use crate::{
         unify::resolve_completely::WriteBackCtxt,
     },
     lower::{
-        ImplTraitIdx, ImplTraitLoweringMode, LifetimeElisionKind, diagnostics::TyLoweringDiagnostic,
+        ImplTraitIdx, ImplTraitLoweringMode, LifetimeElisionKind, TyLoweringInferVarsCtx,
+        diagnostics::TyLoweringDiagnostic,
     },
     method_resolution::CandidateId,
     next_solver::{
@@ -1189,6 +1189,7 @@ pub(crate) struct InferenceContext<'body, 'db> {
     pub(crate) edition: Edition,
     allow_using_generic_params: bool,
     generics: OnceCell<Generics<'db>>,
+    identity_args: OnceCell<GenericArgs<'db>>,
     pub(crate) table: unify::InferenceTable<'db>,
     pub(crate) lang_items: &'db LangItems,
     pub(crate) features: &'db UnstableFeatures,
@@ -1302,6 +1303,7 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
             generic_def,
             allow_using_generic_params,
             generics: OnceCell::new(),
+            identity_args: OnceCell::new(),
             store,
             traits_in_scope: resolver.traits_in_scope(db),
             resolver,
@@ -1611,7 +1613,6 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
             InferenceTyDiagnosticSource::Signature,
             ExpressionStoreOwnerId::Signature(id.into()),
             LifetimeElisionKind::for_const(self.interner(), id.loc(self.db).container),
-            Span::Dummy,
         );
 
         self.return_ty = return_ty;
@@ -1624,7 +1625,6 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
             InferenceTyDiagnosticSource::Signature,
             ExpressionStoreOwnerId::Signature(id.into()),
             LifetimeElisionKind::Elided(self.types.regions.statik),
-            Span::Dummy,
         );
 
         self.return_ty = return_ty;
@@ -1662,12 +1662,12 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
         if let Some(self_param) = self_param
             && let Some(ty) = param_tys.next()
         {
-            let ty = self.process_user_written_ty(Span::Dummy, ty);
+            let ty = self.process_user_written_ty(ty);
             self.write_binding_ty(self_param, ty);
         }
         for pat in params {
             let ty = param_tys.next().unwrap_or_else(|| self.table.next_ty_var(Span::Dummy));
-            let ty = self.process_user_written_ty(Span::Dummy, ty);
+            let ty = self.process_user_written_ty(ty);
 
             self.infer_top_pat(*pat, ty, PatOrigin::Param);
         }
@@ -1683,7 +1683,7 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
                         ctx.lower_ty(return_ty)
                     },
                 );
-                self.process_user_written_ty(Span::Dummy, return_ty)
+                self.process_user_written_ty(return_ty)
             }
             None => self.types.types.unit,
         };
@@ -1797,10 +1797,6 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
         self.result.type_of_pat.insert(pat, ty.store());
     }
 
-    fn write_type_placeholder_ty(&mut self, type_ref: TypeRefId, ty: Ty<'db>) {
-        self.result.type_of_type_placeholder.insert(type_ref, ty.store());
-    }
-
     fn write_binding_ty(&mut self, id: BindingId, ty: Ty<'db>) {
         self.result.type_of_binding.insert(id, ty.store());
     }
@@ -1832,6 +1828,13 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
         lifetime_elision: LifetimeElisionKind<'db>,
         f: impl FnOnce(&mut TyLoweringContext<'db, '_>) -> R,
     ) -> R {
+        let infer_vars = match types_source {
+            InferenceTyDiagnosticSource::Body => Some(TyLoweringInferVarsCtx {
+                table: &mut self.table,
+                type_of_placeholder: &mut self.result.type_of_type_placeholder,
+            }),
+            InferenceTyDiagnosticSource::Signature => None,
+        };
         let mut ctx = TyLoweringContext::new(
             self.db,
             &self.resolver,
@@ -1840,8 +1843,10 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
             types_source,
             store_owner,
             self.generic_def,
+            &self.generics,
             lifetime_elision,
             self.allow_using_generic_params,
+            infer_vars,
             &self.defined_anon_consts,
         );
         f(&mut ctx)
@@ -1867,30 +1872,11 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
         type_source: InferenceTyDiagnosticSource,
         store_owner: ExpressionStoreOwnerId,
         lifetime_elision: LifetimeElisionKind<'db>,
-        span: Span,
     ) -> Ty<'db> {
         let ty = self.with_ty_lowering(store, type_source, store_owner, lifetime_elision, |ctx| {
             ctx.lower_ty(type_ref)
         });
-        let ty = self.process_user_written_ty(span, ty);
-
-        // Record the association from placeholders' TypeRefId to type variables.
-        // We only record them if their number matches. This assumes TypeRef::walk and TypeVisitable process the items in the same order.
-        let type_variables = collect_type_inference_vars(&ty);
-        let mut placeholder_ids = vec![];
-        TypeRef::walk(type_ref, store, &mut |type_ref_id, type_ref| {
-            if matches!(type_ref, TypeRef::Placeholder) {
-                placeholder_ids.push(type_ref_id);
-            }
-        });
-
-        if placeholder_ids.len() == type_variables.len() {
-            for (placeholder_id, type_variable) in placeholder_ids.into_iter().zip(type_variables) {
-                self.write_type_placeholder_ty(placeholder_id, type_variable);
-            }
-        }
-
-        ty
+        self.process_user_written_ty(ty)
     }
 
     pub(crate) fn make_body_ty(&mut self, type_ref: TypeRefId) -> Ty<'db> {
@@ -1900,13 +1886,16 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
             InferenceTyDiagnosticSource::Body,
             self.store_owner,
             LifetimeElisionKind::Infer,
-            type_ref.into(),
         )
     }
 
     fn generics(&self) -> &Generics<'db> {
-        self.generics.get_or_init(|| {
-            crate::generics::generics(self.db, self.store_owner.generic_def(self.db))
+        self.generics.get_or_init(|| crate::generics::generics(self.db, self.generic_def))
+    }
+
+    fn identity_args(&self) -> GenericArgs<'db> {
+        *self.identity_args.get_or_init(|| {
+            GenericArgs::identity_for_item(self.interner(), self.store_owner.into())
         })
     }
 
@@ -1960,14 +1949,14 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
             LifetimeElisionKind::Infer,
             |ctx| ctx.lower_lifetime(lifetime_ref),
         );
-        self.insert_type_vars(lt, Span::Dummy)
+        self.insert_type_vars(lt)
     }
 
-    fn insert_type_vars<T>(&mut self, ty: T, span: Span) -> T
+    fn insert_type_vars<T>(&mut self, ty: T) -> T
     where
         T: TypeFoldable<DbInterner<'db>>,
     {
-        self.table.insert_type_vars(ty, span)
+        self.table.insert_type_vars(ty)
     }
 
     /// Attempts to returns the deeply last field of nested structures, but
@@ -2032,8 +2021,8 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
     }
 
     /// Whenever you lower a user-written type, you should call this.
-    fn process_user_written_ty(&mut self, span: Span, ty: Ty<'db>) -> Ty<'db> {
-        self.table.process_user_written_ty(span, ty)
+    fn process_user_written_ty(&mut self, ty: Ty<'db>) -> Ty<'db> {
+        self.table.process_user_written_ty(ty)
     }
 
     /// The difference of this method from `process_user_written_ty()` is that this method doesn't register a well-formed obligation,
@@ -2174,6 +2163,7 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
         path: &Path,
         value_ns: bool,
     ) -> (Ty<'db>, Option<VariantId>) {
+        let interner = self.interner();
         let mut ctx = TyLoweringContext::new(
             self.db,
             &self.resolver,
@@ -2182,18 +2172,23 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
             InferenceTyDiagnosticSource::Body,
             self.store_owner,
             self.generic_def,
+            &self.generics,
             LifetimeElisionKind::Infer,
             self.allow_using_generic_params,
+            Some(TyLoweringInferVarsCtx {
+                table: &mut self.table,
+                type_of_placeholder: &mut self.result.type_of_type_placeholder,
+            }),
             &self.defined_anon_consts,
         );
 
         if let Some(type_anchor) = path.type_anchor() {
             let mut segments = path.segments();
             if segments.is_empty() {
-                return (self.err_ty(), None);
+                return (self.types.types.error, None);
             }
             let (mut ty, type_ns) = ctx.lower_ty_ext(type_anchor);
-            ty = self.table.process_user_written_ty(type_anchor.into(), ty);
+            ty = ctx.expect_table().process_user_written_ty(ty);
 
             if let Some(TypeNs::SelfType(impl_)) = type_ns
                 && let Some(trait_ref) = self.db.impl_trait(impl_)
@@ -2205,20 +2200,20 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
                     .associated_type_by_name(segments.first().unwrap().name)
             {
                 // `<Self>::AssocType`
-                let args = self.infcx().fill_rest_fresh_args(
+                let args = ctx.expect_table().infer_ctxt.fill_rest_fresh_args(
                     node.into(),
                     assoc_type.into(),
                     trait_ref.args,
                 );
                 let alias = Ty::new_alias(
-                    self.interner(),
+                    interner,
                     AliasTy::new_from_args(
-                        self.interner(),
+                        interner,
                         AliasTyKind::Projection { def_id: assoc_type.into() },
                         args,
                     ),
                 );
-                ty = self.table.try_structurally_resolve_type(node.into(), alias);
+                ty = ctx.expect_table().try_structurally_resolve_type(node.into(), alias);
                 segments = segments.skip(1);
             }
 
@@ -2234,15 +2229,15 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
                         segments = segments.skip(1);
                         variant.into()
                     } else {
-                        return (self.err_ty(), None);
+                        return (self.types.types.error, None);
                     }
                 }
-                None => return (self.err_ty(), None),
+                None => return (self.types.types.error, None),
             };
 
             if !segments.is_empty() {
                 // FIXME: Report an error.
-                return (self.err_ty(), None);
+                return (self.types.types.error, None);
             } else {
                 return (ty, Some(variant));
             }
@@ -2252,33 +2247,34 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
         let interner = DbInterner::conjure();
         let (resolution, unresolved) = if value_ns {
             let Some(res) = path_ctx.resolve_path_in_value_ns(HygieneId::ROOT) else {
-                return (self.err_ty(), None);
+                return (self.types.types.error, None);
             };
             match res {
                 ResolveValueResult::ValueNs(value) => match value {
                     ValueNs::EnumVariantId(var) => {
-                        let args = path_ctx.substs_from_path(var.into(), true, false);
+                        let args = path_ctx.substs_from_path(var.into(), true, false, node.into());
                         drop(ctx);
                         let ty = self
                             .db
                             .ty(var.lookup(self.db).parent.into())
                             .instantiate(interner, args)
                             .skip_norm_wip();
-                        let ty = self.insert_type_vars(ty, Span::Dummy);
+                        let ty = self.insert_type_vars(ty);
                         return (ty, Some(var.into()));
                     }
                     ValueNs::StructId(strukt) => {
-                        let args = path_ctx.substs_from_path(strukt.into(), true, false);
+                        let args =
+                            path_ctx.substs_from_path(strukt.into(), true, false, node.into());
                         drop(ctx);
                         let ty =
                             self.db.ty(strukt.into()).instantiate(interner, args).skip_norm_wip();
-                        let ty = self.insert_type_vars(ty, Span::Dummy);
+                        let ty = self.insert_type_vars(ty);
                         return (ty, Some(strukt.into()));
                     }
                     ValueNs::ImplSelf(impl_id) => (TypeNs::SelfType(impl_id), None),
                     _ => {
                         drop(ctx);
-                        return (self.err_ty(), None);
+                        return (self.types.types.error, None);
                     }
                 },
                 ResolveValueResult::Partial(typens, unresolved) => (typens, Some(unresolved)),
@@ -2286,33 +2282,33 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
         } else {
             match path_ctx.resolve_path_in_type_ns() {
                 Some((it, idx)) => (it, idx),
-                None => return (self.err_ty(), None),
+                None => return (self.types.types.error, None),
             }
         };
         return match resolution {
             TypeNs::AdtId(AdtId::StructId(strukt)) => {
-                let args = path_ctx.substs_from_path(strukt.into(), true, false);
+                let args = path_ctx.substs_from_path(strukt.into(), true, false, node.into());
                 drop(ctx);
                 let ty = self.db.ty(strukt.into()).instantiate(interner, args).skip_norm_wip();
-                let ty = self.insert_type_vars(ty, Span::Dummy);
+                let ty = self.insert_type_vars(ty);
                 forbid_unresolved_segments(self, (ty, Some(strukt.into())), unresolved)
             }
             TypeNs::AdtId(AdtId::UnionId(u)) => {
-                let args = path_ctx.substs_from_path(u.into(), true, false);
+                let args = path_ctx.substs_from_path(u.into(), true, false, node.into());
                 drop(ctx);
                 let ty = self.db.ty(u.into()).instantiate(interner, args).skip_norm_wip();
-                let ty = self.insert_type_vars(ty, Span::Dummy);
+                let ty = self.insert_type_vars(ty);
                 forbid_unresolved_segments(self, (ty, Some(u.into())), unresolved)
             }
             TypeNs::EnumVariantId(var) => {
-                let args = path_ctx.substs_from_path(var.into(), true, false);
+                let args = path_ctx.substs_from_path(var.into(), true, false, node.into());
                 drop(ctx);
                 let ty = self
                     .db
                     .ty(var.lookup(self.db).parent.into())
                     .instantiate(interner, args)
                     .skip_norm_wip();
-                let ty = self.insert_type_vars(ty, Span::Dummy);
+                let ty = self.insert_type_vars(ty);
                 forbid_unresolved_segments(self, (ty, Some(var.into())), unresolved)
             }
             TypeNs::SelfType(impl_id) => {
@@ -2322,7 +2318,7 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
                     drop(ctx);
                     let Some(mod_path) = path.mod_path() else {
                         never!("resolver should always resolve lang item paths");
-                        return (self.err_ty(), None);
+                        return (self.types.types.error, None);
                     };
                     return self.resolve_variant_on_alias(node, ty, None, mod_path);
                 };
@@ -2350,7 +2346,7 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
                                 // We still have unresolved paths, but enum variants never have
                                 // associated types!
                                 // FIXME: Report an error.
-                                (self.err_ty(), None)
+                                (self.types.types.error, None)
                             };
                         }
                     }
@@ -2364,12 +2360,12 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
                     // `lower_partly_resolved_path()` returns `None` as type namespace unless
                     // `remaining_segments` is empty, which is never the case here. We don't know
                     // which namespace the new `ty` is in until normalized anyway.
-                    (ty, _) = path_ctx.lower_partly_resolved_path(resolution, true);
+                    (ty, _) = path_ctx.lower_partly_resolved_path(resolution, true, node.into());
                     tried_resolving_once = true;
 
-                    ty = self.table.process_user_written_ty(node.into(), ty);
+                    ty = path_ctx.expect_table().process_user_written_ty(ty);
                     if ty.is_ty_error() {
-                        return (self.err_ty(), None);
+                        return (self.types.types.error, None);
                     }
 
                     remaining_segments = remaining_segments.skip(1);
@@ -2388,7 +2384,7 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
             }
             TypeNs::TraitId(_) => {
                 let Some(remaining_idx) = unresolved else {
-                    return (self.err_ty(), None);
+                    return (self.types.types.error, None);
                 };
 
                 let remaining_segments = path.segments().skip(remaining_idx);
@@ -2397,8 +2393,9 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
                     path_ctx.ignore_last_segment();
                 }
 
-                let (mut ty, _) = path_ctx.lower_partly_resolved_path(resolution, true);
-                ty = self.table.process_user_written_ty(node.into(), ty);
+                let (mut ty, _) =
+                    path_ctx.lower_partly_resolved_path(resolution, true, node.into());
+                ty = ctx.expect_table().process_user_written_ty(ty);
 
                 if let Some(segment) = remaining_segments.get(1)
                     && let Some((AdtId::EnumId(id), _)) = ty.as_adt()
@@ -2411,7 +2408,7 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
                             // We still have unresolved paths, but enum variants never have
                             // associated types!
                             // FIXME: Report an error.
-                            (self.err_ty(), None)
+                            (self.types.types.error, None)
                         };
                     }
                 }
@@ -2429,27 +2426,28 @@ impl<'body, 'db> InferenceContext<'body, 'db> {
             TypeNs::TypeAliasId(it) => {
                 let Some(mod_path) = path.mod_path() else {
                     never!("resolver should always resolve lang item paths");
-                    return (self.err_ty(), None);
+                    return (self.types.types.error, None);
                 };
-                let args = path_ctx.substs_from_path_segment(it.into(), true, None, false);
+                let args =
+                    path_ctx.substs_from_path_segment(it.into(), true, None, false, node.into());
                 drop(ctx);
                 let interner = DbInterner::conjure();
                 let ty = self.db.ty(it.into()).instantiate(interner, args).skip_norm_wip();
-                let ty = self.insert_type_vars(ty, Span::Dummy);
+                let ty = self.insert_type_vars(ty);
 
                 self.resolve_variant_on_alias(node, ty, unresolved, mod_path)
             }
             TypeNs::AdtSelfType(_) => {
                 // FIXME this could happen in array size expressions, once we're checking them
-                (self.err_ty(), None)
+                (self.types.types.error, None)
             }
             TypeNs::GenericParam(_) => {
                 // FIXME potentially resolve assoc type
-                (self.err_ty(), None)
+                (self.types.types.error, None)
             }
             TypeNs::AdtId(AdtId::EnumId(_)) | TypeNs::BuiltinType(_) | TypeNs::ModuleId(_) => {
                 // FIXME diagnostic
-                (self.err_ty(), None)
+                (self.types.types.error, None)
             }
         };
 
