@@ -475,7 +475,6 @@ impl<'a, 'b, 'db, D: Delegate<'db>> ExprUseVisitor<'a, 'b, 'db, D> {
         Ok(())
     }
 
-    // FIXME: It's suspicious that this is public; clippy should probably use `walk_expr`.
     #[instrument(skip(self), level = "debug")]
     pub(crate) fn consume_expr(&mut self, expr: ExprId) -> Result {
         let place_with_id = self.cat_expr(expr)?;
