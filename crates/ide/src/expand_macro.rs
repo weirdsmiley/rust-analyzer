@@ -6,7 +6,8 @@ use ide_db::{
 };
 use span::{SpanMap, TextRange, TextSize};
 use stdx::format_to;
-use syntax::{AstNode, NodeOrToken, SyntaxKind, SyntaxNode, T, ast, ted};
+use syntax::syntax_editor::SyntaxEditor;
+use syntax::{AstNode, NodeOrToken, SyntaxKind, SyntaxNode, T, ast};
 
 use crate::FilePosition;
 
@@ -153,7 +154,6 @@ fn expand_macro_recur(
             .or_else(|| sema.expand_allowed_builtins(macro_call))?,
         item => sema.expand_attr_macro(item)?.map(|it| it.value),
     };
-    let expanded = expanded.clone_for_update();
     if let Some(err) = err {
         format_to!(error, "\n{}", err.render_to_string(sema.db));
     }
@@ -175,6 +175,7 @@ fn expand(
     result_span_map: &mut SpanMap,
     mut offset_in_original_node: i32,
 ) -> SyntaxNode {
+    let (editor, expanded) = SyntaxEditor::new(expanded);
     let children = expanded.descendants().filter_map(ast::Item::cast);
     let mut replacements = Vec::new();
 
@@ -200,8 +201,8 @@ fn expand(
         }
     }
 
-    replacements.into_iter().rev().for_each(|(old, new)| ted::replace(old.syntax(), new));
-    expanded
+    replacements.into_iter().rev().for_each(|(old, new)| editor.replace(old.syntax(), new));
+    editor.finish().new_root().clone()
 }
 
 fn format(
