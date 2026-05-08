@@ -111,19 +111,24 @@ pub(crate) fn remove_unused_imports(acc: &mut Assists, ctx: &AssistContext<'_, '
                 is_path_per_ns_unused_in_scope(ctx, &u, scope, &res).then_some(u)
             }
         })
-        .peekable();
+        .collect::<Vec<_>>();
 
-    // Peek so we terminate early if an unused use is found. Only do the rest of the work if the user selects the assist.
-    if unused.peek().is_some() {
+    // Terminate early unless an unused use is found. Only do the rest of the work if the user selects the assist.
+    if !unused.is_empty() {
         acc.add(
             AssistId::quick_fix("remove_unused_imports"),
             "Remove all unused imports",
             selected_el.text_range(),
             |builder| {
-                let unused: Vec<ast::UseTree> = unused.map(|x| builder.make_mut(x)).collect();
-                for node in unused {
-                    node.remove_recursive();
+                let editor = builder.make_editor(&selected_el);
+                unused.sort_by_key(|use_tree| use_tree.syntax().text_range().start());
+                for node in &unused {
+                    editor.delete(node.syntax());
                 }
+                for node in unused.iter().cloned() {
+                    node.remove_recursive(&editor);
+                }
+                builder.add_file_edits(ctx.vfs_file_id(), editor);
             },
         )
     } else {

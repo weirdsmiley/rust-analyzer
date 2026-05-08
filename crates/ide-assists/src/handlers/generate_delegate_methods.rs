@@ -213,7 +213,6 @@ pub(crate) fn generate_delegate_methods(
                         let impl_def = impl_def.indent(indent);
 
                         // Insert the impl block.
-                        let strukt = edit.make_mut(strukt.clone());
                         editor.insert_all(
                             Position::after(strukt.syntax()),
                             vec![

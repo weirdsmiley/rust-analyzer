@@ -133,7 +133,19 @@ impl SyntaxEditor {
             !matches!(&element, SyntaxElement::Node(node) if node == &self.root),
             "should not delete root node"
         );
-        self.changes.borrow_mut().push(Change::Replace(element.syntax_element(), None));
+        let mut changes = self.changes.borrow_mut();
+        for change in changes.iter_mut() {
+            if let Change::Replace(existing, replacement) = change
+                && *existing == element
+            {
+                if replacement.is_none() {
+                    return;
+                }
+                *replacement = None;
+                return;
+            }
+        }
+        changes.push(Change::Replace(element, None));
     }
 
     pub fn delete_all(&self, range: RangeInclusive<SyntaxElement>) {
@@ -149,9 +161,23 @@ impl SyntaxEditor {
     pub fn replace(&self, old: impl Element, new: impl Element) {
         let old = old.syntax_element();
         debug_assert!(is_ancestor_or_self_of_element(&old, &self.root));
-        self.changes
-            .borrow_mut()
-            .push(Change::Replace(old.syntax_element(), Some(new.syntax_element())));
+        let new = new.syntax_element();
+        let mut changes = self.changes.borrow_mut();
+        for change in changes.iter_mut() {
+            if let Change::Replace(existing, replacement) = change
+                && *existing == old
+            {
+                match replacement {
+                    None => return,
+                    Some(existing_new) if *existing_new == new => return,
+                    Some(existing_new) => {
+                        *existing_new = new;
+                        return;
+                    }
+                }
+            }
+        }
+        changes.push(Change::Replace(old, Some(new)));
     }
 
     pub fn replace_with_many(&self, old: impl Element, new: Vec<SyntaxElement>) {
@@ -176,6 +202,14 @@ impl SyntaxEditor {
 
     pub fn finish(self) -> SyntaxEdit {
         edit_algo::apply_edits(self)
+    }
+
+    pub fn deleted(&self, element: impl Element) -> bool {
+        let element = element.syntax_element();
+        self.changes
+            .borrow()
+            .iter()
+            .any(|change| matches!(change, Change::Replace(existing, None) if *existing == element))
     }
 }
 
