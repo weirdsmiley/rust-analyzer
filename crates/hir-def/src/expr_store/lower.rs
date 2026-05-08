@@ -8,6 +8,7 @@ mod path;
 
 use std::{cell::OnceCell, mem};
 
+use arrayvec::ArrayVec;
 use base_db::FxIndexSet;
 use cfg::CfgOptions;
 use either::Either;
@@ -81,7 +82,7 @@ pub(super) fn lower_body(
     // even though they should be the same. Also, when the body comes from multiple expansions, their
     // hygiene is different.
 
-    let mut self_param = None;
+    let mut self_params = ArrayVec::new();
     let mut source_map_self_param = None;
     let mut params = vec![];
     let mut collector = ExprCollector::new(db, module, current_file_id);
@@ -114,7 +115,7 @@ pub(super) fn lower_body(
                     BindingAnnotation::new(is_mutable, false),
                     hygiene,
                 );
-                self_param = Some(binding_id);
+                self_params.push(binding_id);
                 source_map_self_param =
                     Some(collector.expander.in_file(AstPtr::new(&self_param_syn)));
             }
@@ -124,7 +125,7 @@ pub(super) fn lower_body(
         collector.with_expr_root(|collector| collector.missing_expr());
         let (store, source_map) = collector.store.finish();
         return (
-            Body { store, params: params.into_boxed_slice(), self_param },
+            Body { store, params: params.into_boxed_slice(), self_params },
             BodySourceMap { self_param: source_map_self_param, store: source_map },
         );
     }
@@ -142,7 +143,7 @@ pub(super) fn lower_body(
                 BindingAnnotation::new(is_mutable, false),
                 hygiene,
             );
-            self_param = Some(binding_id);
+            self_params.push(binding_id);
             source_map_self_param = Some(collector.expander.in_file(AstPtr::new(&self_param_syn)));
         }
 
@@ -166,7 +167,7 @@ pub(super) fn lower_body(
 
     collector.with_expr_root(|collector| {
         collector.collect(
-            self_param,
+            &mut self_params,
             &mut params,
             body,
             if is_async_fn {
@@ -186,7 +187,7 @@ pub(super) fn lower_body(
 
     let (store, source_map) = collector.store.finish();
     (
-        Body { store, params: params.into_boxed_slice(), self_param },
+        Body { store, params: params.into_boxed_slice(), self_params },
         BodySourceMap { self_param: source_map_self_param, store: source_map },
     )
 }
@@ -946,7 +947,7 @@ impl<'db> ExprCollector<'db> {
     /// drop order are stable.
     fn lower_coroutine_body_with_moved_arguments(
         &mut self,
-        self_param: Option<BindingId>,
+        self_params: &mut ArrayVec<BindingId, 2>,
         params: &mut [PatId],
         body: ExprId,
         kind: CoroutineKind,
@@ -980,7 +981,7 @@ impl<'db> ExprCollector<'db> {
 
         let mut statements = Vec::new();
 
-        if let Some(self_param) = self_param {
+        if let Some(&self_param) = self_params.first() {
             let Binding { ref name, mode, hygiene, .. } = self.store.bindings[self_param];
             let name = name.clone();
             let child_binding_id = self.alloc_binding(name.clone(), mode, hygiene);
@@ -997,6 +998,7 @@ impl<'db> ExprCollector<'db> {
                 initializer: Some(expr),
                 else_branch: None,
             });
+            self_params.push(child_binding_id);
         }
 
         for param in params {
@@ -1098,7 +1100,7 @@ impl<'db> ExprCollector<'db> {
 
     fn collect(
         &mut self,
-        self_param: Option<BindingId>,
+        self_params: &mut ArrayVec<BindingId, 2>,
         params: &mut [PatId],
         expr: Option<ast::Expr>,
         awaitable: Awaitable,
@@ -1116,7 +1118,7 @@ impl<'db> ExprCollector<'db> {
                     (false, false) => unreachable!(),
                 };
                 this.lower_coroutine_body_with_moved_arguments(
-                    self_param,
+                    self_params,
                     params,
                     body,
                     kind,
@@ -1593,7 +1595,7 @@ impl<'db> ExprCollector<'db> {
                         // It's important that this expr is allocated immediately before the closure.
                         // We rely on it for `coroutine_for_closure()`.
                         body = this.lower_coroutine_body_with_moved_arguments(
-                            None,
+                            &mut ArrayVec::new(),
                             &mut args,
                             body,
                             kind,

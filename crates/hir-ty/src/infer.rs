@@ -140,7 +140,7 @@ pub fn infer_query_with_inspect<'db>(
     }
 
     match def {
-        DefWithBodyId::FunctionId(f) => ctx.collect_fn(f, body.self_param, &body.params),
+        DefWithBodyId::FunctionId(f) => ctx.collect_fn(f, body.self_param(), &body.params),
         DefWithBodyId::ConstId(c) => ctx.collect_const(c, ConstSignature::of(db, c)),
         DefWithBodyId::StaticId(s) => ctx.collect_static(s, StaticSignature::of(db, s)),
         DefWithBodyId::VariantId(v) => {

@@ -2,6 +2,7 @@
 //! consts.
 use std::ops;
 
+use arrayvec::ArrayVec;
 use hir_expand::{InFile, Lookup};
 use span::Edition;
 use syntax::ast;
@@ -28,7 +29,12 @@ pub struct Body {
     /// If this `Body` is for the body of a constant, this will just be
     /// empty.
     pub params: Box<[PatId]>,
-    pub self_param: Option<BindingId>,
+    /// The first element, if it exists, is the real `self` binding.
+    ///
+    /// The second element is used for `async fn` (or `gen fn` etc.). These functions
+    /// have to put a `let self = self` inside the returned coroutine, and the second element
+    /// points at it.
+    pub self_params: ArrayVec<BindingId, 2>,
 }
 
 impl ops::Deref for Body {
@@ -120,6 +126,16 @@ impl Body {
         // A `Body` can also contain root expressions that aren't the body (in the param patterns),
         // but the body always come last.
         self.store.expr_roots().next_back().unwrap()
+    }
+
+    pub fn self_param(&self) -> Option<BindingId> {
+        self.self_params.first().copied()
+    }
+
+    /// `async fn` (or `gen fn` etc.), have to put a `let self = self` inside the returned coroutine.
+    /// This function returns it.
+    pub fn coroutine_self_binding(&self) -> Option<BindingId> {
+        self.self_params.get(1).copied()
     }
 
     pub fn pretty_print(
