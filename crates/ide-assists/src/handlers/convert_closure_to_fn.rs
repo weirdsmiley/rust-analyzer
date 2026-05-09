@@ -14,7 +14,7 @@ use syntax::{
         make,
     },
     hacks::parse_expr_from_str,
-    ted,
+    syntax_editor::SyntaxEditor,
 };
 
 use crate::assist_context::{AssistContext, Assists};
@@ -64,6 +64,10 @@ pub(crate) fn convert_closure_to_fn(acc: &mut Assists, ctx: &AssistContext<'_, '
             _ => None,
         }
     });
+
+    let (editor, source_root) = SyntaxEditor::new(ctx.source_file().syntax().clone());
+    let make = editor.make();
+
     let module = ctx.sema.scope(closure.syntax())?.module();
     let closure_ty = ctx.sema.type_of_expr(&closure.clone().into())?;
     let callable = closure_ty.original.as_callable(ctx.db())?;
@@ -85,14 +89,15 @@ pub(crate) fn convert_closure_to_fn(acc: &mut Assists, ctx: &AssistContext<'_, '
                     let ty = param_ty
                         .display_source_code(ctx.db(), module.into(), true)
                         .unwrap_or_else(|_| "_".to_owned());
-                    Some(make::param(node.pat()?, make::ty(&ty)))
+                    Some(make.param(node.pat()?, make.ty(&ty)))
                 }
             }
         })
         .collect::<Option<Vec<_>>>()?;
     let capture_params_start = params.len();
 
-    let mut body = closure.body()?.clone_for_update();
+    let closure_param_list = syntax::AstPtr::new(&closure.param_list()?);
+    let body = closure.body()?;
     let mut is_gen = false;
     let mut is_async = closure.async_token().is_some();
     if is_async {
@@ -107,37 +112,30 @@ pub(crate) fn convert_closure_to_fn(acc: &mut Assists, ctx: &AssistContext<'_, '
         {
             is_async = true;
             ret_ty = ret_ty.future_output(ctx.db())?;
-            let token_idx = async_token.index();
-            let whitespace_tokens_after_count = async_token
+            let end = async_token
                 .siblings_with_tokens(Direction::Next)
                 .skip(1)
-                .take_while(|token| token.kind() == SyntaxKind::WHITESPACE)
-                .count();
-            body.syntax().splice_children(
-                token_idx..token_idx + whitespace_tokens_after_count + 1,
-                Vec::new(),
-            );
+                .take_while(|it| it.kind() == SyntaxKind::WHITESPACE)
+                .last()
+                .unwrap_or_else(|| async_token.clone().into());
+            editor.delete_all(async_token.into()..=end);
         }
         if let Some(gen_token) = block.gen_token() {
             is_gen = true;
             ret_ty = ret_ty.iterator_item(ctx.db())?;
-            let token_idx = gen_token.index();
-            let whitespace_tokens_after_count = gen_token
+            let end = gen_token
                 .siblings_with_tokens(Direction::Next)
                 .skip(1)
-                .take_while(|token| token.kind() == SyntaxKind::WHITESPACE)
-                .count();
-            body.syntax().splice_children(
-                token_idx..token_idx + whitespace_tokens_after_count + 1,
-                Vec::new(),
-            );
+                .take_while(|it| it.kind() == SyntaxKind::WHITESPACE)
+                .last()
+                .unwrap_or_else(|| gen_token.clone().into());
+            editor.delete_all(gen_token.into()..=end);
         }
 
         if block.try_block_modifier().is_none()
             && block.unsafe_token().is_none()
             && block.label().is_none()
             && block.const_token().is_none()
-            && block.async_token().is_none()
         {
             wrap_body_in_block = false;
         }
@@ -148,17 +146,17 @@ pub(crate) fn convert_closure_to_fn(acc: &mut Assists, ctx: &AssistContext<'_, '
         "Convert closure to fn",
         closure.param_list()?.syntax().text_range(),
         |builder| {
+            let make = editor.make();
             let closure_name_or_default = closure_name
                 .as_ref()
                 .map(|(_, _, it)| it.clone())
-                .unwrap_or_else(|| make::name("fun_name"));
+                .unwrap_or_else(|| make.name("fun_name"));
             let captures = closure_ty.captured_items(ctx.db());
             let capture_tys =
                 captures.iter().map(|capture| capture.captured_ty(ctx.db())).collect::<Vec<_>>();
 
             let mut captures_as_args = Vec::with_capacity(captures.len());
 
-            let body_root = body.syntax().ancestors().last().unwrap();
             // We need to defer this work because otherwise the text range of elements is being messed up, and
             // replacements for the next captures won't work.
             let mut capture_usages_replacement_map = Vec::with_capacity(captures.len());
@@ -167,9 +165,9 @@ pub(crate) fn convert_closure_to_fn(acc: &mut Assists, ctx: &AssistContext<'_, '
                 // FIXME: Allow configuring the replacement of `self`.
                 let is_self = capture.local().is_self(ctx.db()) && !capture.has_field_projections();
                 let capture_name = if is_self {
-                    make::name("this")
+                    make.name("this")
                 } else {
-                    make::name(&capture.place_to_name(ctx.db(), ctx.edition()))
+                    make.name(&capture.place_to_name(ctx.db(), ctx.edition()))
                 };
 
                 closure_mentioned_generic_params.extend(capture_ty.generic_params(ctx.db()));
@@ -177,9 +175,9 @@ pub(crate) fn convert_closure_to_fn(acc: &mut Assists, ctx: &AssistContext<'_, '
                 let capture_ty = capture_ty
                     .display_source_code(ctx.db(), module.into(), true)
                     .unwrap_or_else(|_| "_".to_owned());
-                let param = make::param(
-                    ast::Pat::IdentPat(make::ident_pat(false, false, capture_name.clone_subtree())),
-                    make::ty(&capture_ty),
+                let param = make.param(
+                    ast::Pat::IdentPat(make.ident_pat(false, false, capture_name.clone())),
+                    make.ty(&capture_ty),
                 );
                 if is_self {
                     // Always put `this` first.
@@ -195,7 +193,7 @@ pub(crate) fn convert_closure_to_fn(acc: &mut Assists, ctx: &AssistContext<'_, '
                     }
 
                     let capture_usage_source = capture_usage.source();
-                    let capture_usage_source = capture_usage_source.to_node(&body_root);
+                    let capture_usage_source = capture_usage_source.to_node(&source_root);
                     let mut expr = match capture_usage_source {
                         Either::Left(expr) => expr,
                         Either::Right(pat) => {
@@ -211,8 +209,7 @@ pub(crate) fn convert_closure_to_fn(acc: &mut Assists, ctx: &AssistContext<'_, '
                         &capture_name,
                         capture.kind(),
                         matches!(expr, ast::Expr::RefExpr(_)) || capture_usage.is_ref(),
-                    )
-                    .clone_for_update();
+                    );
                     capture_usages_replacement_map.push((expr, replacement));
                 }
 
@@ -228,12 +225,16 @@ pub(crate) fn convert_closure_to_fn(acc: &mut Assists, ctx: &AssistContext<'_, '
                 compute_closure_type_params(ctx, closure_mentioned_generic_params, &closure);
 
             for (old, new) in capture_usages_replacement_map {
-                if old == body {
-                    body = new;
-                } else {
-                    ted::replace(old.syntax(), new.syntax());
-                }
+                editor.replace(old.syntax(), new.syntax());
             }
+
+            let body = closure_param_list
+                .to_node(editor.finish().new_root())
+                .syntax()
+                .parent()
+                .and_then(ast::ClosureExpr::cast)
+                .and_then(|closure| closure.body())
+                .unwrap();
 
             let body = if wrap_body_in_block {
                 make::block_expr([], Some(body.reset_indent().indent(1.into())))
@@ -266,7 +267,6 @@ pub(crate) fn convert_closure_to_fn(acc: &mut Assists, ctx: &AssistContext<'_, '
             );
             fn_ = fn_.dedent(IndentLevel::from_token(&fn_.syntax().last_token().unwrap()));
 
-            builder.edit_file(ctx.vfs_file_id());
             match &closure_name {
                 Some((closure_decl, _, _)) => {
                     fn_ = fn_.indent(closure_decl.indent_level());
