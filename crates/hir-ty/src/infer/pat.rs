@@ -1185,7 +1185,10 @@ https://doc.rust-lang.org/reference/types.html#trait-objects";
         for (field_idx, field) in fields.iter().enumerate() {
             match used_fields.entry(field.name.clone()) {
                 Occupied(_occupied) => {
-                    // FIXME: Emit an error, field specified twice.
+                    self.push_diagnostic(InferenceDiagnostic::DuplicateField {
+                        field: field.pat.into(),
+                        variant,
+                    });
                 }
                 Vacant(vacant) => {
                     vacant.insert(field_idx);

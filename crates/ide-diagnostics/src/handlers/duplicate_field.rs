@@ -81,4 +81,43 @@ fn main() {
 "#,
         );
     }
+
+    #[test]
+    fn duplicate_field_in_struct_pattern() {
+        check_diagnostics(
+            r#"
+struct S { foo: i32, bar: i32 }
+fn f(s: S) {
+    let S {
+        foo,
+        bar,
+        foo,
+      //^^^ error: field specified more than once
+        ..
+    } = s;
+    let _ = (foo, bar);
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn duplicate_field_in_enum_variant_pattern() {
+        check_diagnostics(
+            r#"
+enum E { V { foo: i32, bar: i32 } }
+fn f(e: E) {
+    match e {
+        E::V {
+            foo,
+            bar,
+            foo,
+          //^^^ error: field specified more than once
+            ..
+        } => { let _ = (foo, bar); }
+    }
+}
+"#,
+        );
+    }
 }
