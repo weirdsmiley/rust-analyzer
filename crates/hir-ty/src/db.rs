@@ -17,7 +17,6 @@ use hir_def::{
     signatures::{ConstSignature, StaticSignature},
 };
 use la_arena::ArenaMap;
-use salsa::plumbing::AsId;
 use span::Edition;
 use stdx::impl_from;
 use triomphe::Arc;
@@ -284,10 +283,6 @@ pub trait HirDatabase: DefDatabase + std::fmt::Debug {
         &'db self,
         type_alias: TypeAliasId,
     ) -> EarlyBinder<'db, &'db [Clause<'db>]>;
-
-    // Interned IDs for solver integration
-    #[salsa::interned]
-    fn intern_impl_trait_id(&self, id: ImplTraitId) -> InternedOpaqueTyId;
 
     #[salsa::invoke(crate::variance::variances_of)]
     #[salsa::transparent]

@@ -496,7 +496,7 @@ impl<'db, 'a> TyLoweringContext<'db, 'a> {
                             |f| ImplTraitId::ReturnTypeImplTrait(f, idx),
                             |a| ImplTraitId::TypeAliasImplTrait(a, idx),
                         );
-                        let opaque_ty_id = self.db.intern_impl_trait_id(impl_trait_id);
+                        let opaque_ty_id = InternedOpaqueTyId::new(self.db, impl_trait_id);
 
                         // We don't want to lower the bounds inside the binders
                         // we're currently in, because they don't end up inside

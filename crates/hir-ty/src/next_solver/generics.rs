@@ -12,7 +12,7 @@ pub(crate) fn generics(interner: DbInterner<'_>, def: SolverDefId) -> Generics<'
     let db = interner.db;
     let def = match (def.try_into(), def) {
         (Ok(def), _) => def,
-        (_, SolverDefId::InternedOpaqueTyId(id)) => match db.lookup_intern_impl_trait_id(id) {
+        (_, SolverDefId::InternedOpaqueTyId(id)) => match id.loc(db) {
             crate::ImplTraitId::ReturnTypeImplTrait(function_id, _) => function_id.into(),
             crate::ImplTraitId::TypeAliasImplTrait(type_alias_id, _) => type_alias_id.into(),
         },
