@@ -11,7 +11,7 @@ use syntax::{
     ast::{
         self, HasArgList, HasGenericParams, HasName,
         edit::{AstNodeEdit, IndentLevel},
-        make,
+        syntax_factory::SyntaxFactory,
     },
     hacks::parse_expr_from_str,
     syntax_editor::SyntaxEditor,
@@ -205,6 +205,7 @@ pub(crate) fn convert_closure_to_fn(acc: &mut Assists, ctx: &AssistContext<'_, '
                         expr = peel_ref(expr);
                     }
                     let replacement = wrap_capture_in_deref_if_needed(
+                        make,
                         &expr,
                         &capture_name,
                         capture.kind(),
@@ -213,7 +214,7 @@ pub(crate) fn convert_closure_to_fn(acc: &mut Assists, ctx: &AssistContext<'_, '
                     capture_usages_replacement_map.push((expr, replacement));
                 }
 
-                let capture_as_arg = capture_as_arg(ctx, capture);
+                let capture_as_arg = capture_as_arg(make, ctx, capture);
                 if is_self {
                     captures_as_args.insert(0, capture_as_arg);
                 } else {
@@ -222,7 +223,7 @@ pub(crate) fn convert_closure_to_fn(acc: &mut Assists, ctx: &AssistContext<'_, '
             }
 
             let (closure_type_params, closure_where_clause) =
-                compute_closure_type_params(ctx, closure_mentioned_generic_params, &closure);
+                compute_closure_type_params(make, ctx, closure_mentioned_generic_params, &closure);
 
             for (old, new) in capture_usages_replacement_map {
                 editor.replace(old.syntax(), new.syntax());
@@ -236,22 +237,24 @@ pub(crate) fn convert_closure_to_fn(acc: &mut Assists, ctx: &AssistContext<'_, '
                 .and_then(|closure| closure.body())
                 .unwrap();
 
+            let make = SyntaxFactory::without_mappings();
+
             let body = if wrap_body_in_block {
-                make::block_expr([], Some(body.reset_indent().indent(1.into())))
+                make.block_expr([], Some(body.reset_indent().indent(1.into())))
             } else {
                 ast::BlockExpr::cast(body.syntax().clone()).unwrap()
             };
 
-            let params = make::param_list(None, params);
+            let params = make.param_list(None, params);
             let ret_ty = if ret_ty.is_unit() {
                 None
             } else {
                 let ret_ty = ret_ty
                     .display_source_code(ctx.db(), module.into(), true)
                     .unwrap_or_else(|_| "_".to_owned());
-                Some(make::ret_type(make::ty(&ret_ty)))
+                Some(make.ret_type(make.ty(&ret_ty)))
             };
-            let mut fn_ = make::fn_(
+            let mut fn_ = make.fn_(
                 None,
                 None,
                 closure_name_or_default.clone(),
@@ -346,6 +349,7 @@ pub(crate) fn convert_closure_to_fn(acc: &mut Assists, ctx: &AssistContext<'_, '
 }
 
 fn compute_closure_type_params(
+    make: &SyntaxFactory,
     ctx: &AssistContext<'_, '_>,
     mentioned_generic_params: FxHashSet<hir::GenericParam>,
     closure: &ast::ClosureExpr,
@@ -472,11 +476,11 @@ fn compute_closure_type_params(
         }))
         .collect::<Vec<_>>();
     let where_clause =
-        (!include_where_bounds.is_empty()).then(|| make::where_clause(include_where_bounds));
+        (!include_where_bounds.is_empty()).then(|| make.where_clause(include_where_bounds));
 
     // FIXME: Consider generic parameters that do not appear in params/return type/captures but
     // written explicitly inside the closure.
-    (Some(make::generic_param_list(include_params)), where_clause)
+    (Some(make.generic_param_list(include_params)), where_clause)
 }
 
 fn peel_parens(mut expr: ast::Expr) -> ast::Expr {
@@ -497,12 +501,13 @@ fn peel_ref(mut expr: ast::Expr) -> ast::Expr {
 }
 
 fn wrap_capture_in_deref_if_needed(
+    make: &SyntaxFactory,
     expr: &ast::Expr,
     capture_name: &ast::Name,
     capture_kind: CaptureKind,
     is_ref: bool,
 ) -> ast::Expr {
-    let capture_name = make::expr_path(make::path_from_text(&capture_name.text()));
+    let capture_name = make.expr_path(make.path_from_text(&capture_name.text()));
     if capture_kind == CaptureKind::Move || is_ref {
         return capture_name;
     }
@@ -524,10 +529,14 @@ fn wrap_capture_in_deref_if_needed(
     if does_autoderef {
         return capture_name;
     }
-    make::expr_prefix(T![*], capture_name).into()
+    make.expr_prefix(T![*], capture_name).into()
 }
 
-fn capture_as_arg(ctx: &AssistContext<'_, '_>, capture: &ClosureCapture<'_>) -> ast::Expr {
+fn capture_as_arg(
+    make: &SyntaxFactory,
+    ctx: &AssistContext<'_, '_>,
+    capture: &ClosureCapture<'_>,
+) -> ast::Expr {
     let place = parse_expr_from_str(
         &capture.display_place_source_code(ctx.db(), ctx.edition()),
         ctx.edition(),
@@ -543,7 +552,7 @@ fn capture_as_arg(ctx: &AssistContext<'_, '_>, capture: &ClosureCapture<'_>) -> 
     {
         return expr.expr().expect("`display_place_source_code()` produced an invalid expr");
     }
-    make::expr_ref(place, needs_mut)
+    make.expr_ref(place, needs_mut)
 }
 
 fn handle_calls(
