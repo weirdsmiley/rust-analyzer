@@ -220,9 +220,9 @@ impl<N: AstIdNode> AstIdLoc for AssocItemLoc<N> {
 }
 
 macro_rules! impl_intern {
-    ($id:ident, $loc:ident, $intern:ident, $lookup:ident) => {
+    ($id:ident, $loc:ident) => {
         impl_intern_key!($id, $loc);
-        impl_intern_lookup!(DefDatabase, $id, $loc, $intern, $lookup);
+        impl_intern_lookup!(DefDatabase, $id, $loc);
     };
 }
 
@@ -249,10 +249,10 @@ macro_rules! impl_loc {
 }
 
 type FunctionLoc = AssocItemLoc<ast::Fn>;
-impl_intern!(FunctionId, FunctionLoc, intern_function, lookup_intern_function);
+impl_intern!(FunctionId, FunctionLoc);
 
 type StructLoc = ItemLoc<ast::Struct>;
-impl_intern!(StructId, StructLoc, intern_struct, lookup_intern_struct);
+impl_intern!(StructId, StructLoc);
 
 impl StructId {
     pub fn fields(self, db: &dyn DefDatabase) -> &VariantFields {
@@ -269,7 +269,7 @@ impl StructId {
 }
 
 pub type UnionLoc = ItemLoc<ast::Union>;
-impl_intern!(UnionId, UnionLoc, intern_union, lookup_intern_union);
+impl_intern!(UnionId, UnionLoc);
 
 impl UnionId {
     pub fn fields(self, db: &dyn DefDatabase) -> &VariantFields {
@@ -286,7 +286,7 @@ impl UnionId {
 }
 
 pub type EnumLoc = ItemLoc<ast::Enum>;
-impl_intern!(EnumId, EnumLoc, intern_enum, lookup_intern_enum);
+impl_intern!(EnumId, EnumLoc);
 
 impl EnumId {
     #[inline]
@@ -304,13 +304,13 @@ impl EnumId {
 }
 
 type ConstLoc = AssocItemLoc<ast::Const>;
-impl_intern!(ConstId, ConstLoc, intern_const, lookup_intern_const);
+impl_intern!(ConstId, ConstLoc);
 
 pub type StaticLoc = AssocItemLoc<ast::Static>;
-impl_intern!(StaticId, StaticLoc, intern_static, lookup_intern_static);
+impl_intern!(StaticId, StaticLoc);
 
 pub type TraitLoc = ItemLoc<ast::Trait>;
-impl_intern!(TraitId, TraitLoc, intern_trait, lookup_intern_trait);
+impl_intern!(TraitId, TraitLoc);
 
 impl TraitId {
     #[inline]
@@ -320,10 +320,10 @@ impl TraitId {
 }
 
 type TypeAliasLoc = AssocItemLoc<ast::TypeAlias>;
-impl_intern!(TypeAliasId, TypeAliasLoc, intern_type_alias, lookup_intern_type_alias);
+impl_intern!(TypeAliasId, TypeAliasLoc);
 
 type ImplLoc = ItemLoc<ast::Impl>;
-impl_intern!(ImplId, ImplLoc, intern_impl, lookup_intern_impl);
+impl_intern!(ImplId, ImplLoc);
 
 impl ImplId {
     #[inline]
@@ -353,13 +353,13 @@ pub struct BuiltinDeriveImplId {
 }
 
 type UseLoc = ItemLoc<ast::Use>;
-impl_intern!(UseId, UseLoc, intern_use, lookup_intern_use);
+impl_intern!(UseId, UseLoc);
 
 type ExternCrateLoc = ItemLoc<ast::ExternCrate>;
-impl_intern!(ExternCrateId, ExternCrateLoc, intern_extern_crate, lookup_intern_extern_crate);
+impl_intern!(ExternCrateId, ExternCrateLoc);
 
 type ExternBlockLoc = ItemLoc<ast::ExternBlock>;
-impl_intern!(ExternBlockId, ExternBlockLoc, intern_extern_block, lookup_intern_extern_block);
+impl_intern!(ExternBlockId, ExternBlockLoc);
 
 impl ExternBlockId {
     pub fn abi(self, db: &dyn DefDatabase) -> ExternAbi {
@@ -373,7 +373,7 @@ pub struct EnumVariantLoc {
     pub parent: EnumId,
     pub index: u32,
 }
-impl_intern!(EnumVariantId, EnumVariantLoc, intern_enum_variant, lookup_intern_enum_variant);
+impl_intern!(EnumVariantId, EnumVariantLoc);
 impl_loc!(EnumVariantLoc, id: Variant, parent: EnumId);
 
 impl EnumVariantId {
@@ -398,7 +398,7 @@ pub struct Macro2Loc {
     pub allow_internal_unsafe: bool,
     pub edition: Edition,
 }
-impl_intern!(Macro2Id, Macro2Loc, intern_macro2, lookup_intern_macro2);
+impl_intern!(Macro2Id, Macro2Loc);
 impl_loc!(Macro2Loc, id: MacroDef, container: ModuleId);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -409,7 +409,7 @@ pub struct MacroRulesLoc {
     pub flags: MacroRulesLocFlags,
     pub edition: Edition,
 }
-impl_intern!(MacroRulesId, MacroRulesLoc, intern_macro_rules, lookup_intern_macro_rules);
+impl_intern!(MacroRulesId, MacroRulesLoc);
 impl_loc!(MacroRulesLoc, id: MacroRules, container: ModuleId);
 
 bitflags::bitflags! {
@@ -437,7 +437,7 @@ pub struct ProcMacroLoc {
     pub kind: ProcMacroKind,
     pub edition: Edition,
 }
-impl_intern!(ProcMacroId, ProcMacroLoc, intern_proc_macro, lookup_intern_proc_macro);
+impl_intern!(ProcMacroId, ProcMacroLoc);
 impl_loc!(ProcMacroLoc, id: Fn, container: ModuleId);
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
@@ -446,7 +446,7 @@ pub struct BlockLoc {
     /// The containing module.
     pub module: ModuleId,
 }
-impl_intern!(BlockId, BlockLoc, intern_block, lookup_intern_block);
+impl_intern!(BlockId, BlockLoc);
 
 #[salsa_macros::tracked(debug)]
 #[derive(PartialOrd, Ord)]

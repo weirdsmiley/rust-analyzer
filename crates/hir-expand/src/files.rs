@@ -266,8 +266,10 @@ impl<SN: Borrow<SyntaxNode>> InFile<SN> {
     ) -> impl Iterator<Item = InFile<SyntaxNode>> + '_ {
         let succ = move |node: &InFile<SyntaxNode>| match node.value.parent() {
             Some(parent) => Some(node.with_value(parent)),
-            None => db
-                .lookup_intern_macro_call(node.file_id.macro_file()?)
+            None => node
+                .file_id
+                .macro_file()?
+                .loc(db)
                 .to_node_item(db)
                 .syntax()
                 .cloned()
@@ -283,8 +285,10 @@ impl<SN: Borrow<SyntaxNode>> InFile<SN> {
     ) -> impl Iterator<Item = InFile<SyntaxNode>> + '_ {
         let succ = move |node: &InFile<SyntaxNode>| match node.value.parent() {
             Some(parent) => Some(node.with_value(parent)),
-            None => db
-                .lookup_intern_macro_call(node.file_id.macro_file()?)
+            None => node
+                .file_id
+                .macro_file()?
+                .loc(db)
                 .to_node_item(db)
                 .syntax()
                 .cloned()
@@ -392,7 +396,7 @@ impl InFile<SyntaxToken> {
                 }
 
                 // Fall back to whole macro call.
-                let loc = db.lookup_intern_macro_call(mac_file);
+                let loc = mac_file.loc(db);
                 loc.kind.original_call_range(db, loc.krate)
             }
         }
@@ -438,7 +442,7 @@ impl InFile<TextRange> {
                 match map_node_range_up(db, db.expansion_span_map(mac_file), self.value) {
                     Some(it) => it,
                     None => {
-                        let loc = db.lookup_intern_macro_call(mac_file);
+                        let loc = mac_file.loc(db);
                         (
                             loc.kind.original_call_range(db, loc.krate),
                             SyntaxContext::root(loc.def.edition),
@@ -456,7 +460,7 @@ impl InFile<TextRange> {
                 match map_node_range_up_rooted(db, db.expansion_span_map(mac_file), self.value) {
                     Some(it) => it,
                     _ => {
-                        let loc = db.lookup_intern_macro_call(mac_file);
+                        let loc = mac_file.loc(db);
                         loc.kind.original_call_range(db, loc.krate)
                     }
                 }
@@ -474,7 +478,7 @@ impl InFile<TextRange> {
                 match map_node_range_up_rooted(db, db.expansion_span_map(mac_file), self.value) {
                     Some(it) => it,
                     _ => {
-                        let loc = db.lookup_intern_macro_call(mac_file);
+                        let loc = mac_file.loc(db);
                         loc.kind.original_call_range_with_input(db)
                     }
                 }

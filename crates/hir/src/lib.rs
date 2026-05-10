@@ -1130,7 +1130,7 @@ fn macro_call_diagnostics<'db>(
     };
     let ValueResult { value: parse_errors, err } = e;
     if let Some(err) = err {
-        let loc = db.lookup_intern_macro_call(macro_call_id);
+        let loc = macro_call_id.loc(db);
         let file_id = loc.kind.file_id();
         let mut range = precise_macro_call_location(&loc.kind, db, loc.krate);
         let RenderedExpandError { message, error, kind } = err.render_to_string(db);
@@ -1142,7 +1142,7 @@ fn macro_call_diagnostics<'db>(
     }
 
     if !parse_errors.is_empty() {
-        let loc = db.lookup_intern_macro_call(macro_call_id);
+        let loc = macro_call_id.loc(db);
         let range = precise_macro_call_location(&loc.kind, db, loc.krate);
         acc.push(MacroExpansionParseError { range, errors: parse_errors.clone() }.into())
     }
@@ -7453,6 +7453,17 @@ fn body_param_env_from_has_crate<'db>(
 
 fn empty_param_env<'db>(krate: base_db::Crate) -> ParamEnvAndCrate<'db> {
     ParamEnvAndCrate { param_env: ParamEnv::empty(), krate }
+}
+
+// FIXME: We probably don't want to expose this.
+pub trait MacroCallIdExt {
+    fn loc(self, db: &dyn HirDatabase) -> hir_expand::MacroCallLoc;
+}
+impl MacroCallIdExt for span::MacroCallId {
+    #[inline]
+    fn loc(self, db: &dyn HirDatabase) -> hir_expand::MacroCallLoc {
+        hir_expand::MacroCallId::from(self).loc(db)
+    }
 }
 
 pub use hir_ty::next_solver;

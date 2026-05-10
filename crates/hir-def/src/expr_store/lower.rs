@@ -2951,7 +2951,7 @@ impl<'db> ExprCollector<'db> {
             None
         } else {
             hygiene_id.syntax_context().outer_expn(self.db).map(|expansion| {
-                let expansion = self.db.lookup_intern_macro_call(expansion.into());
+                let expansion = hir_expand::MacroCallId::from(expansion).loc(self.db);
                 (hygiene_id.syntax_context().parent(self.db), expansion.def)
             })
         };
@@ -2981,7 +2981,7 @@ impl<'db> ExprCollector<'db> {
 
                         hygiene_id = HygieneId::new(parent_ctx.opaque_and_semiopaque(self.db));
                         hygiene_info = parent_ctx.outer_expn(self.db).map(|expansion| {
-                            let expansion = self.db.lookup_intern_macro_call(expansion.into());
+                            let expansion = hir_expand::MacroCallId::from(expansion).loc(self.db);
                             (parent_ctx.parent(self.db), expansion.def)
                         });
                     }

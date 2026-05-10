@@ -217,7 +217,7 @@ impl<'db> AssocItemCollector<'db> {
                 attr_id,
             ) {
                 Ok(ResolvedAttr::Macro(call_id)) => {
-                    let loc = self.db.lookup_intern_macro_call(call_id);
+                    let loc = call_id.loc(self.db);
                     if let MacroDefKind::ProcMacro(_, exp, _) = loc.def.kind {
                         // If there's no expander for the proc macro (e.g. the
                         // proc macro is ignored, or building the proc macro

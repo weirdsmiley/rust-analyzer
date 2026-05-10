@@ -85,16 +85,6 @@ pub trait ExpandDatabase: SourceDatabase {
     #[salsa::transparent]
     fn real_span_map(&self, file_id: EditionedFileId) -> &RealSpanMap;
 
-    /// Macro ids. That's probably the tricksiest bit in rust-analyzer, and the
-    /// reason why we use salsa at all.
-    ///
-    /// We encode macro definitions into ids of macro calls, this what allows us
-    /// to be incremental.
-    #[salsa::transparent]
-    fn intern_macro_call(&self, macro_call: MacroCallLoc) -> MacroCallId;
-    #[salsa::transparent]
-    fn lookup_intern_macro_call(&self, macro_call: MacroCallId) -> MacroCallLoc;
-
     /// Lowers syntactic macro call to a token tree representation. That's a firewall
     /// query, only typing in the macro call itself changes the returned
     /// subtree.
@@ -159,7 +149,7 @@ fn syntax_context(db: &dyn ExpandDatabase, file: HirFileId, edition: Edition) ->
     match file {
         HirFileId::FileId(_) => SyntaxContext::root(edition),
         HirFileId::MacroFile(m) => {
-            let kind = db.lookup_intern_macro_call(m).kind;
+            let kind = m.loc(db).kind;
             db.macro_arg_considering_derives(m, &kind).2.ctx
         }
     }
@@ -182,7 +172,7 @@ pub fn expand_speculative(
     speculative_args: &SyntaxNode,
     token_to_map: SyntaxToken,
 ) -> Option<(SyntaxNode, Vec<(SyntaxToken, u8)>)> {
-    let loc = db.lookup_intern_macro_call(actual_macro_call);
+    let loc = actual_macro_call.loc(db);
     let (_, _, span) = *db.macro_arg_considering_derives(actual_macro_call, &loc.kind);
 
     let span_map = RealSpanMap::absolute(span.anchor.file_id);
@@ -369,7 +359,7 @@ fn parse_macro_expansion(
     macro_file: MacroCallId,
 ) -> ExpandResult<(Parse<SyntaxNode>, ExpansionSpanMap)> {
     let _p = tracing::info_span!("parse_macro_expansion").entered();
-    let loc = db.lookup_intern_macro_call(macro_file);
+    let loc = macro_file.loc(db);
     let expand_to = loc.expand_to();
     let mbe::ValueResult { value: (tt, matched_arm), err } = macro_expand(db, macro_file, loc);
 
@@ -423,7 +413,7 @@ fn macro_arg_considering_derives<'db>(
 
 #[salsa_macros::tracked(returns(ref))]
 fn macro_arg(db: &dyn ExpandDatabase, id: MacroCallId) -> MacroArgResult {
-    let loc = db.lookup_intern_macro_call(id);
+    let loc = id.loc(db);
 
     if let MacroCallLoc {
         def: MacroDefId { kind: MacroDefKind::BuiltInEager(..), .. },
@@ -642,7 +632,7 @@ fn proc_macro_span(db: &dyn ExpandDatabase, ast: AstId<ast::Fn>) -> Span {
 
 #[salsa_macros::tracked(returns(ref))]
 fn expand_proc_macro(db: &dyn ExpandDatabase, id: MacroCallId) -> ExpandResult<tt::TopSubtree> {
-    let loc = db.lookup_intern_macro_call(id);
+    let loc = id.loc(db);
     let (macro_arg, undo_info, span) = db.macro_arg_considering_derives(id, &loc.kind);
 
     let (ast, expander) = match loc.def.kind {
@@ -710,12 +700,4 @@ fn check_tt_count(tt: &tt::TopSubtree) -> Result<(), ExpandResult<()>> {
             )),
         })
     }
-}
-
-fn intern_macro_call(db: &dyn ExpandDatabase, macro_call: MacroCallLoc) -> MacroCallId {
-    MacroCallId::new(db, macro_call)
-}
-
-fn lookup_intern_macro_call(db: &dyn ExpandDatabase, macro_call: MacroCallId) -> MacroCallLoc {
-    macro_call.loc(db)
 }

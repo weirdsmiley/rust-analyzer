@@ -118,11 +118,7 @@ fn include_macro_invoc(
         .modules
         .values()
         .flat_map(|m| m.scope.iter_macro_invoc())
-        .filter_map(|invoc| {
-            db.lookup_intern_macro_call(*invoc.1)
-                .include_file_id(db, *invoc.1)
-                .map(|x| (*invoc.1, x))
-        })
+        .filter_map(|invoc| invoc.1.loc(db).include_file_id(db, *invoc.1).map(|x| (*invoc.1, x)))
         .collect()
 }
 
