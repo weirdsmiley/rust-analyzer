@@ -33,6 +33,10 @@ impl SyntaxFactory {
         make::ext::expr_self().clone_for_update()
     }
 
+    pub fn expr_const_value(&self, text: &str) -> ast::ConstArg {
+        make::expr_const_value(text).clone_for_update()
+    }
+
     pub fn lifetime(&self, text: &str) -> ast::Lifetime {
         make::lifetime(text).clone_for_update()
     }
@@ -61,6 +65,14 @@ impl SyntaxFactory {
         }
 
         ast
+    }
+
+    pub fn ty_path_from_segments(
+        &self,
+        segments: impl IntoIterator<Item = ast::PathSegment>,
+        is_abs: bool,
+    ) -> ast::Type {
+        ast::Type::PathType(self.ty_path(self.path_from_segments(segments, is_abs)))
     }
 
     pub fn type_bound(&self, bound: ast::Type) -> ast::TypeBound {
