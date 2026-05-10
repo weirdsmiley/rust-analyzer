@@ -578,6 +578,7 @@ pub(super) mod resolve_completely {
                 self.resolve_completely(diagnostic);
 
                 if let InferenceDiagnostic::ExpectedFunction { found: ty, .. }
+                | InferenceDiagnostic::ExpectedArrayOrSlicePat { found: ty, .. }
                 | InferenceDiagnostic::UnresolvedField { receiver: ty, .. }
                 | InferenceDiagnostic::UnresolvedMethodCall { receiver: ty, .. } = diagnostic
                     && ty.as_ref().references_non_lt_error()

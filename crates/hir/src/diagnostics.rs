@@ -103,6 +103,7 @@ diagnostics![AnyDiagnostic<'db> ->
     AwaitOutsideOfAsync,
     BreakOutsideOfLoop,
     CastToUnsized<'db>,
+    ExpectedArrayOrSlicePat<'db>,
     ExpectedFunction<'db>,
     FunctionalRecordUpdateOnNonStruct,
     GenericDefaultRefersToSelf,
@@ -294,6 +295,12 @@ pub struct MismatchedArrayPatLen {
     pub expected: u128,
     pub found: u128,
     pub has_rest: bool,
+}
+
+#[derive(Debug)]
+pub struct ExpectedArrayOrSlicePat<'db> {
+    pub pat: InFile<ExprOrPatPtr>,
+    pub found: Type<'db>,
 }
 
 #[derive(Debug)]
@@ -776,6 +783,10 @@ impl<'db> AnyDiagnostic<'db> {
             &InferenceDiagnostic::MismatchedArrayPatLen { pat, expected, found, has_rest } => {
                 let pat = pat_syntax(pat)?.map(Into::into);
                 MismatchedArrayPatLen { pat, expected, found, has_rest }.into()
+            }
+            InferenceDiagnostic::ExpectedArrayOrSlicePat { pat, found } => {
+                let pat = pat_syntax(*pat)?.map(Into::into);
+                ExpectedArrayOrSlicePat { pat, found: Type::new(db, def, found.as_ref()) }.into()
             }
             &InferenceDiagnostic::DuplicateField { field: expr, variant } => {
                 let expr_or_pat = match expr {

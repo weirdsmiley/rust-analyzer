@@ -1620,7 +1620,10 @@ https://doc.rust-lang.org/reference/types.html#trait-objects";
             TyKind::Slice(element_ty) => (element_ty, Some(expected), expected),
             // The expected type must be an array or slice, but was neither, so error.
             _ => {
-                // FIXME: Emit an error: expected an array or a slice.
+                self.push_diagnostic(InferenceDiagnostic::ExpectedArrayOrSlicePat {
+                    pat,
+                    found: expected.store(),
+                });
                 let err = self.types.types.error;
                 (err, Some(err), err)
             }
