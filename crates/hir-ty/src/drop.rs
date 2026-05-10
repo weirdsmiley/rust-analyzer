@@ -22,9 +22,9 @@ use crate::{
 #[salsa::tracked]
 pub fn destructor(db: &dyn HirDatabase, adt: AdtId) -> Option<ImplId> {
     let module = match adt {
-        AdtId::EnumId(id) => db.lookup_intern_enum(id).container,
-        AdtId::StructId(id) => db.lookup_intern_struct(id).container,
-        AdtId::UnionId(id) => db.lookup_intern_union(id).container,
+        AdtId::EnumId(id) => id.loc(db).container,
+        AdtId::StructId(id) => id.loc(db).container,
+        AdtId::UnionId(id) => id.loc(db).container,
     };
     let interner = DbInterner::new_with(db, module.krate(db));
     let drop_trait = interner.lang_items().Drop?;
