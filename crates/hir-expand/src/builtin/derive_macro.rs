@@ -1182,10 +1182,18 @@ fn coerce_pointee_expand(
                 // Otherwise, duplicate only bounds that mention the pointee.
                 let is_pointee = param_name.text() == pointee_param_name.text();
                 let new_bounds = bounds.bounds().filter_map(|bound| {
-                    let (bound, substituted) =
-                        substitute_type_bound(bound, &pointee_param_name.text(), ADDED_PARAM);
-                    (substituted || is_pointee).then_some(bound)
+                    let new_bound = substitute_type_bound(
+                        bound.clone(),
+                        &pointee_param_name.text(),
+                        ADDED_PARAM,
+                    );
+
+                    if is_pointee {
+                        return new_bound.or(Some(bound));
+                    }
+                    new_bound
                 });
+
                 let new_bounds_target = if is_pointee {
                     make.name_ref(ADDED_PARAM)
                 } else {
@@ -1231,15 +1239,13 @@ fn coerce_pointee_expand(
 
             // If the target type references the pointee, duplicate the bound as whole.
             // Otherwise, duplicate only bounds that mention the pointee.
-            let (predicate_with_substituted_target, target_substituted) =
-                substitute_where_pred(&predicate, &pointee_param_name.text(), ADDED_PARAM);
-            if target_substituted {
+            if let Some(predicate_with_substituted_target) =
+                substitute_where_pred(&predicate, &pointee_param_name.text(), ADDED_PARAM)
+            {
                 new_predicates.push(predicate_with_substituted_target);
             } else if let Some(bounds) = predicate.type_bound_list() {
                 let new_bounds = bounds.bounds().filter_map(|bound| {
-                    let (bound, substituted) =
-                        substitute_type_bound(bound, &pointee_param_name.text(), ADDED_PARAM);
-                    substituted.then_some(bound)
+                    substitute_type_bound(bound, &pointee_param_name.text(), ADDED_PARAM)
                 });
                 new_predicates.push(make.where_pred(Either::Right(pred_target), new_bounds));
             }
@@ -1386,24 +1392,24 @@ fn coerce_pointee_expand(
         bound: ast::TypeBound,
         param_name: &str,
         replacement: &str,
-    ) -> (ast::TypeBound, bool) {
+    ) -> Option<ast::TypeBound> {
         let (editor, bound) = SyntaxEditor::with_ast_node(&bound);
         let substituted = bound
             .ty()
             .is_some_and(|ty| substitute_type_in_bound(&editor, ty, param_name, replacement));
         if !substituted {
-            return (bound, false);
+            return None;
         }
 
         let edit = editor.finish();
-        (ast::TypeBound::cast(edit.new_root().clone()).unwrap(), true)
+        Some(ast::TypeBound::cast(edit.new_root().clone()).unwrap())
     }
 
     fn substitute_where_pred(
         predicate: &ast::WherePred,
         param_name: &str,
         replacement: &str,
-    ) -> (ast::WherePred, bool) {
+    ) -> Option<ast::WherePred> {
         let (editor, predicate) = SyntaxEditor::with_ast_node(predicate);
         let substituted = predicate
             .ty()
@@ -1416,11 +1422,11 @@ fn coerce_pointee_expand(
             }
         }
         if !substituted {
-            return (predicate, false);
+            return None;
         }
 
         let edit = editor.finish();
-        (ast::WherePred::cast(edit.new_root().clone()).unwrap(), true)
+        Some(ast::WherePred::cast(edit.new_root().clone()).unwrap())
     }
 
     fn substitute_type_in_bound(
