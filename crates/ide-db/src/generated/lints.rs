@@ -258,6 +258,13 @@ pub const DEFAULT_LINTS: &[Lint] = &[
         deny_since: None,
     },
     Lint {
+        label: "dead_code_pub_in_binary",
+        description: r##"detect public items in executable crates that are never used"##,
+        default_severity: Severity::Allow,
+        warn_since: None,
+        deny_since: None,
+    },
+    Lint {
         label: "default_overrides_default_fields",
         description: r##"detect `Default` impl that should use the type's default field values"##,
         default_severity: Severity::Error,
@@ -5559,6 +5566,20 @@ The tracking issue for this feature is: [#95174]
         deny_since: None,
     },
     Lint {
+        label: "const_param_ty_unchecked",
+        description: r##"# `const_param_ty_unchecked`
+
+Allows skipping `ConstParamTy_` trait implementation checks
+
+This feature has no tracking issue, and is therefore likely internal to the compiler, not being intended for general use.
+
+------------------------
+"##,
+        default_severity: Severity::Allow,
+        warn_since: None,
+        deny_since: None,
+    },
+    Lint {
         label: "const_path_separators",
         description: r##"# `const_path_separators`
 
@@ -8712,7 +8733,7 @@ The tracking issue for this feature is: [#130539]
     },
     Lint {
         label: "generic_const_args",
-        description: r##"# `generic_const_args`
+        description: r##"# generic_const_args
 
 Allows using generics in more complex const expressions, based on definitional equality.
 
@@ -8721,6 +8742,35 @@ The tracking issue for this feature is: [#151972]
 [#151972]: https://github.com/rust-lang/rust/issues/151972
 
 ------------------------
+
+Warning: This feature is incomplete; its design and syntax may change.
+
+This feature enables many of the same use cases supported by [generic_const_exprs],
+but based on the machinery developed for [min_generic_const_args]. In a way, it is
+meant to be an interim successor for GCE (though it might not currently support all
+the valid cases that supported by GCE).
+
+See also: [generic_const_items]
+
+[min_generic_const_args]: min-generic-const-args.md
+[generic_const_exprs]: generic-const-exprs.md
+[generic_const_items]: generic-const-items.md
+
+## Examples
+
+<!-- NOTE(ignore) generic_const_args requires -Znext-solver to compile -->
+```rust,ignore (requires-Z-next-solver)
+#![feature(generic_const_items)]
+#![feature(min_generic_const_args)]
+#![feature(generic_const_args)]
+#![expect(incomplete_features)]
+
+type const ADD1<const N: usize>: usize = const { N + 1 };
+
+type const INC<const N: usize>: usize = ADD1::<N>;
+
+const ARR: [(); ADD1::<0>] = [(); INC::<0>];
+```
 "##,
         default_severity: Severity::Allow,
         warn_since: None,
@@ -8728,15 +8778,79 @@ The tracking issue for this feature is: [#151972]
     },
     Lint {
         label: "generic_const_exprs",
-        description: r##"# `generic_const_exprs`
+        description: r##"# generic_const_exprs
 
-Allows non-trivial generic constants which have to have wfness manually propagated to callers
+Allows non-trivial generic constants which have to be shown to successfully evaluate
+to a value by being part of an item signature.
 
 The tracking issue for this feature is: [#76560]
+
 
 [#76560]: https://github.com/rust-lang/rust/issues/76560
 
 ------------------------
+
+Warning: This feature is incomplete; its design and syntax may change.
+
+See also: [min_generic_const_args], [generic_const_args]
+
+[min_generic_const_args]: min-generic-const-args.md
+[generic_const_args]: generic-const-args.md
+
+## Examples
+
+```rust
+#![allow(incomplete_features)]
+#![feature(generic_const_exprs)]
+
+// Use parameters that depend on a generic argument.
+struct Foo<const N: usize>
+where
+    [(); N + 1]:,
+{
+    array: [usize; N + 1],
+}
+
+// Use generic parameters in const operations.
+trait Bar {
+    const X: usize;
+    const Y: usize;
+}
+
+// Note `B::X * B::Y`.
+const fn baz<B: Bar>(x: [usize; B::X], y: [usize; B::Y]) -> [usize; B::X * B::Y] {
+    let mut out = [0; B::X * B::Y];
+    let mut i = 0;
+    while i < B::Y {
+        let mut j = 0;
+        while j < B::X {
+            out[i * B::X + j] = y[i].saturating_mul(x[j]);
+            j += 1;
+        }
+        i += 1;
+    }
+    out
+}
+
+
+// Create a new type based on a generic argument.
+pub struct Grow<const N: usize> {
+    arr: [usize; N],
+}
+
+impl<const N: usize> Grow<N> {
+    pub const fn grow(self, val: usize) -> Grow<{ N + 1 }> {
+        let mut new_arr = [0; { N + 1 }];
+        let mut idx = 0;
+        while idx < N {
+            new_arr[idx] = self.arr[idx];
+            idx += 1;
+        }
+        new_arr[N] = val;
+        Grow { arr: new_arr }
+    }
+}
+```
 "##,
         default_severity: Severity::Allow,
         warn_since: None,
@@ -8744,7 +8858,7 @@ The tracking issue for this feature is: [#76560]
     },
     Lint {
         label: "generic_const_items",
-        description: r##"# `generic_const_items`
+        description: r##"# generic_const_items
 
 Allows generic parameters and where-clauses on free & associated const items.
 
@@ -8753,6 +8867,50 @@ The tracking issue for this feature is: [#113521]
 [#113521]: https://github.com/rust-lang/rust/issues/113521
 
 ------------------------
+
+Warning: This feature is an [experiment] and lacks an RFC.
+There are no guarantees that it will ever be stabilized.
+
+See also: [generic_const_exprs], [min_generic_const_args].
+
+[experiment]: https://lang-team.rust-lang.org/how_to/experiment.html
+[generic_const_exprs]: generic-const-exprs.md
+[min_generic_const_args]: min-generic-const-args.md
+
+## Examples
+
+### Generic constant values
+
+```rust
+#![allow(incomplete_features)]
+#![feature(generic_const_items)]
+
+const GENERIC_VAL<const ARG: usize>: usize = ARG + 1;
+
+#[test]
+fn generic_const_arg() {
+    assert_eq!(GENERIC_VAL::<1>, 2);
+    assert_eq!(GENERIC_VAL::<2>, 3);
+}
+```
+
+### Conditional constants
+
+```rust
+#![allow(incomplete_features)]
+#![feature(generic_const_items)]
+
+// `GENERIC_VAL::<0>` will fail to compile
+const GENERIC_VAL<const ARG: usize>: usize = if ARG > 0 { ARG + 1 } else { panic!("0 value") };
+
+// Will fail to compile if the `Copy` derive is removed.
+const COPY_MARKER<C: Copy>: () = ();
+
+#[derive(Clone, Copy)]
+struct Foo;
+
+const FOO_IS_COPY: () = COPY_MARKER::<Foo>;
+```
 "##,
         default_severity: Severity::Allow,
         warn_since: None,
@@ -9262,8 +9420,8 @@ The tracking issue for this feature is: [#154650]
         deny_since: None,
     },
     Lint {
-        label: "integer_extend_truncate",
-        description: r##"# `integer_extend_truncate`
+        label: "integer_widen_truncate",
+        description: r##"# `integer_widen_truncate`
 
 
 
@@ -10775,15 +10933,116 @@ The tracking issue for this feature is: [#154042]
     },
     Lint {
         label: "min_generic_const_args",
-        description: r##"# `min_generic_const_args`
+        description: r##"# min_generic_const_args
 
-Enables the generic const args MVP (only bare paths, not arbitrary computation).
+Enables the generic const args MVP (paths to type const items and constructors for ADTs and primitives).
 
 The tracking issue for this feature is: [#132980]
 
 [#132980]: https://github.com/rust-lang/rust/issues/132980
 
 ------------------------
+
+Warning: This feature is incomplete; its design and syntax may change.
+
+This feature acts as a minimal alternative to [generic_const_exprs] that allows a smaller subset of functionality,
+and uses a different approach for implementation. It is intentionally more restrictive, which helps with avoiding edge
+cases that make the `generic_const_exprs` hard to implement properly. See [Feature background][feature_background]
+for more details.
+
+Related features: [generic_const_args], [generic_const_items].
+
+[feature_background]: https://github.com/rust-lang/project-const-generics/blob/main/documents/min_const_generics_plan.md
+[generic_const_exprs]: generic-const-exprs.md
+[generic_const_args]: generic-const-args.md
+[generic_const_items]: generic-const-items.md
+
+## `type const` syntax
+
+This feature introduces new syntax: `type const`.
+Constants marked as `type const` are allowed to be used in type contexts, e.g.:
+
+```compile_fail
+#![allow(incomplete_features)]
+#![feature(min_generic_const_args)]
+
+type const X: usize = 1;
+const Y: usize = 1;
+
+struct Foo {
+    good_arr: [(); X], // Allowed
+    bad_arr: [(); Y], // Will not compile, `Y` must be `type const`.
+}
+```
+
+## Examples
+
+```rust
+#![allow(incomplete_features)]
+#![feature(min_generic_const_args)]
+
+trait Bar {
+    type const VAL: usize;
+    type const VAL2: usize;
+}
+
+struct Baz;
+
+impl Bar for Baz {
+    type const VAL: usize = 2;
+    type const VAL2: usize = const { Self::VAL * 2 };
+}
+
+struct Foo<B: Bar> {
+    arr1: [usize; B::VAL],
+    arr2: [usize; B::VAL2],
+}
+```
+
+Note that with [generic_const_exprs] the same example would look as follows:
+
+```rust
+#![allow(incomplete_features)]
+#![feature(generic_const_exprs)]
+
+trait Bar {
+    const VAL: usize;
+    const VAL2: usize;
+}
+
+struct Baz;
+
+impl Bar for Baz {
+    const VAL: usize = 2;
+    const VAL2: usize = const { Self::VAL * 2 };
+}
+
+struct Foo<B: Bar>
+where
+    [(); B::VAL]:,
+    [(); B::VAL2]:,
+{
+    arr1: [usize; B::VAL],
+    arr2: [usize; B::VAL2],
+}
+```
+
+Use of const functions is allowed:
+
+```rust
+#![allow(incomplete_features)]
+#![feature(min_generic_const_args)]
+
+const VAL: usize = 1;
+
+const fn inc(val: usize) -> usize {
+    val + 1
+}
+
+type const INC: usize = const { inc(VAL) };
+
+const ARR: [usize; INC] = [0; INC];
+```
 "##,
         default_severity: Severity::Allow,
         warn_since: None,
@@ -12022,6 +12281,22 @@ The tracking issue for this feature is: [#148494]
 The tracking issue for this feature is: [#142503]
 
 [#142503]: https://github.com/rust-lang/rust/issues/142503
+
+------------------------
+"##,
+        default_severity: Severity::Allow,
+        warn_since: None,
+        deny_since: None,
+    },
+    Lint {
+        label: "pathbuf_into_string",
+        description: r##"# `pathbuf_into_string`
+
+
+
+The tracking issue for this feature is: [#156203]
+
+[#156203]: https://github.com/rust-lang/rust/issues/156203
 
 ------------------------
 "##,
@@ -14676,6 +14951,22 @@ The tracking issue for this feature is: [#145574]
 The tracking issue for this feature is: [#119639]
 
 [#119639]: https://github.com/rust-lang/rust/issues/119639
+
+------------------------
+"##,
+        default_severity: Severity::Allow,
+        warn_since: None,
+        deny_since: None,
+    },
+    Lint {
+        label: "tcp_keepalive",
+        description: r##"# `tcp_keepalive`
+
+
+
+The tracking issue for this feature is: [#155889]
+
+[#155889]: https://github.com/rust-lang/rust/issues/155889
 
 ------------------------
 "##,
