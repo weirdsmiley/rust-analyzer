@@ -248,9 +248,18 @@ impl<'db> MirLowerCtx<'_, 'db> {
                 (current, current_else)
             }
             Pat::Slice { prefix, slice, suffix } => {
+                let pat_ty = self.infer.pat_ty(pattern);
+                // FIXME: MIR lowering should be skipped for bodies with inference errors. Once
+                // that happens, this recovery for invalid slice patterns can be removed.
+                if !matches!(pat_ty.kind(), TyKind::Array(..) | TyKind::Slice(_)) {
+                    return Err(MirLowerError::TypeError(
+                        "non array or slice type matched with slice pattern",
+                    ));
+                }
+
                 if mode == MatchingMode::Check {
                     // emit runtime length check for slice
-                    if let TyKind::Slice(_) = self.infer.pat_ty(pattern).kind() {
+                    if let TyKind::Slice(_) = pat_ty.kind() {
                         let pattern_len = prefix.len() + suffix.len();
                         let place_len: Place = self
                             .temp(Ty::new_usize(self.interner()), current, pattern.into())?

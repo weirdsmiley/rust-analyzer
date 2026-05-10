@@ -295,6 +295,11 @@ pub enum InferenceDiagnostic {
         #[type_visitable(ignore)]
         has_rest: bool,
     },
+    ExpectedArrayOrSlicePat {
+        #[type_visitable(ignore)]
+        pat: PatId,
+        found: StoredTy,
+    },
     DuplicateField {
         #[type_visitable(ignore)]
         field: ExprOrPatId,
