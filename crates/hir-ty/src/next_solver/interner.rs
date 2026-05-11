@@ -14,8 +14,8 @@ use hir_def::{
     AdtId, CallableDefId, EnumId, HasModule, ItemContainerId, StructId, TraitId, TypeAliasId,
     UnionId, VariantId,
     attrs::AttrFlags,
-    expr_store::ExpressionStore,
-    hir::{ClosureKind as HirClosureKind, CoroutineKind as HirCoroutineKind, ExprId},
+    expr_store::{ExpressionStore, StoreVisitor},
+    hir::{ClosureKind as HirClosureKind, CoroutineKind as HirCoroutineKind, ExprId, PatId},
     lang_item::LangItems,
     signatures::{
         EnumFlags, EnumSignature, FnFlags, FunctionSignature, ImplFlags, ImplSignature,
@@ -1966,41 +1966,41 @@ impl<'db> Interner for DbInterner<'db> {
         // Collect coroutines.
         let (store, root_expr) = def_id.store_and_root_expr(db);
         // We can't just visit all exprs, since this may end up in unrelated anon consts.
-        append_coroutines_in_expr(db, def_id, store, root_expr, &mut result);
+        CoroutinesVisitor { db: self.db, owner: def_id, store, coroutines: &mut result }
+            .on_expr(root_expr);
 
         return SolverDefIds::new_from_slice(&result);
 
-        fn append_coroutines_in_expr(
-            db: &dyn HirDatabase,
+        struct CoroutinesVisitor<'a> {
+            db: &'a dyn HirDatabase,
             owner: InferBodyId,
-            store: &ExpressionStore,
-            expr_id: ExprId,
-            result: &mut Vec<SolverDefId>,
-        ) {
-            let expr = &store[expr_id];
+            store: &'a ExpressionStore,
+            coroutines: &'a mut Vec<SolverDefId>,
+        }
 
-            if let hir_def::hir::Expr::Closure {
-                closure_kind:
-                    kind @ (hir_def::hir::ClosureKind::Coroutine { .. }
-                    | hir_def::hir::ClosureKind::OldCoroutine(_)),
-                ..
-            } = *expr
-            {
-                let coroutine =
-                    InternedCoroutineId::new(db, InternedClosure { owner, expr: expr_id, kind });
-                result.push(coroutine.into());
-            }
+        impl StoreVisitor for CoroutinesVisitor<'_> {
+            fn on_expr(&mut self, expr: ExprId) {
+                if let hir_def::hir::Expr::Closure {
+                    closure_kind:
+                        kind @ (hir_def::hir::ClosureKind::Coroutine { .. }
+                        | hir_def::hir::ClosureKind::OldCoroutine(_)),
+                    ..
+                } = self.store[expr]
+                {
+                    let coroutine = InternedCoroutineId::new(
+                        self.db,
+                        InternedClosure { owner: self.owner, expr, kind },
+                    );
+                    self.coroutines.push(coroutine.into());
+                }
 
-            match expr {
-                // The repeat is an anon const.
-                &hir_def::hir::Expr::Array(hir_def::hir::Array::Repeat {
-                    initializer,
-                    repeat: _,
-                }) => append_coroutines_in_expr(db, owner, store, initializer, result),
-                _ => store.walk_child_exprs(expr_id, |expr_id| {
-                    append_coroutines_in_expr(db, owner, store, expr_id, result)
-                }),
+                self.store.visit_expr_children(expr, self);
             }
+            fn on_pat(&mut self, pat: PatId) {
+                self.store.visit_pat_children(pat, self);
+            }
+            // Do not visit anon consts, they're separate bodies.
+            fn on_anon_const_expr(&mut self, _expr: ExprId) {}
         }
     }
 

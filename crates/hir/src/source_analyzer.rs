@@ -24,7 +24,7 @@ use hir_def::{
     lang_item::LangItems,
     nameres::MacroSubNs,
     resolver::{Resolver, TypeNs, ValueNs, resolver_for_scope},
-    type_ref::{Mutability, TypeRef, TypeRefId},
+    type_ref::{Mutability, TypeRefId},
 };
 use hir_expand::{
     HirFileId, InFile,
@@ -33,7 +33,7 @@ use hir_expand::{
 };
 use hir_ty::{
     Adjustment, InferBodyId, InferenceResult, LifetimeElisionKind, ParamEnvAndCrate,
-    TyLoweringContext,
+    TyLoweringContext, TyLoweringInferVarsCtx,
     diagnostics::{
         InsideUnsafeBlock, record_literal_missing_fields, record_pattern_missing_fields,
         unsafe_operations,
@@ -41,8 +41,8 @@ use hir_ty::{
     lang_items::lang_items_for_bin_op,
     method_resolution::{self, CandidateId},
     next_solver::{
-        AliasTy, DbInterner, ErrorGuaranteed, GenericArgs, ParamEnv, Ty, TyKind, TypingMode,
-        infer::DbInternerInferExt,
+        AliasTy, DbInterner, DefaultAny, ErrorGuaranteed, GenericArgs, ParamEnv, Region, Ty,
+        TyKind, TypingMode, infer::DbInternerInferExt,
     },
     traits::structurally_normalize_ty,
 };
@@ -378,7 +378,8 @@ impl<'db> SourceAnalyzer<'db> {
 
         let generic_def = self.resolver.generic_def()?;
         let generics = OnceCell::new();
-        let mut ty = TyLoweringContext::new(
+        let mut vars_cts = VarsCtx { types: interner.default_types(), infer: self.infer() };
+        let ty = TyLoweringContext::new(
             db,
             &self.resolver,
             self.store()?,
@@ -390,29 +391,30 @@ impl<'db> SourceAnalyzer<'db> {
             // small problem).
             LifetimeElisionKind::Infer,
         )
+        .with_infer_vars_behavior(Some(&mut vars_cts))
         .lower_ty(type_ref);
 
-        // Try and substitute unknown types using InferenceResult
-        if let Some(infer) = self.infer()
-            && let Some(store) = self.store()
-        {
-            let mut inferred_types = vec![];
-            TypeRef::walk(type_ref, store, &mut |type_ref_id, type_ref| {
-                if matches!(type_ref, TypeRef::Placeholder) {
-                    inferred_types.push(infer.type_of_type_placeholder(type_ref_id));
+        struct VarsCtx<'a, 'db> {
+            types: &'db DefaultAny<'db>,
+            infer: Option<&'a InferenceResult>,
+        }
+
+        impl<'db> TyLoweringInferVarsCtx<'db> for VarsCtx<'_, 'db> {
+            fn next_ty_var(&mut self, span: hir_ty::Span) -> Ty<'db> {
+                if let hir_ty::Span::TypeRefId(type_ref) = span
+                    && let Some(ty) =
+                        self.infer.and_then(|infer| infer.type_of_type_placeholder(type_ref))
+                {
+                    ty
+                } else {
+                    self.types.types.error
                 }
-            });
-            let mut inferred_types = inferred_types.into_iter();
-
-            let substituted_ty = hir_ty::next_solver::fold::fold_tys(interner, ty, |ty| {
-                if ty.is_ty_error() { inferred_types.next().flatten().unwrap_or(ty) } else { ty }
-            });
-
-            // Only used the result if the placeholder and unknown type counts matched
-            let success =
-                inferred_types.next().is_none() && !substituted_ty.references_non_lt_error();
-            if success {
-                ty = substituted_ty;
+            }
+            fn next_const_var(&mut self, _span: hir_ty::Span) -> hir_ty::next_solver::Const<'db> {
+                self.types.consts.error
+            }
+            fn next_region_var(&mut self, _span: hir_ty::Span) -> Region<'db> {
+                self.types.regions.error
             }
         }
 

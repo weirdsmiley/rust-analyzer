@@ -12,8 +12,10 @@ use stdx::never;
 
 use crate::{
     InferenceDiagnostic, Span, ValueTyDefId,
-    infer::diagnostics::InferenceTyLoweringContext as TyLoweringContext,
-    lower::{GenericPredicates, LifetimeElisionKind, TyLoweringInferVarsCtx},
+    infer::{
+        InferenceTyLoweringVarsCtx, diagnostics::InferenceTyLoweringContext as TyLoweringContext,
+    },
+    lower::{GenericPredicates, LifetimeElisionKind},
     method_resolution::{self, CandidateId, MethodError},
     next_solver::{
         GenericArg, GenericArgs, TraitRef, Ty, Unnormalized, infer::traits::ObligationCause,
@@ -139,6 +141,10 @@ impl<'db> InferenceContext<'_, 'db> {
         no_diagnostics: bool,
     ) -> Option<(ValueNs, Option<GenericArgs<'db>>)> {
         // Don't use `self.make_ty()` here as we need `orig_ns`.
+        let mut vars_ctx = InferenceTyLoweringVarsCtx {
+            table: &mut self.table,
+            type_of_type_placeholder: &mut self.result.type_of_type_placeholder,
+        };
         let mut ctx = TyLoweringContext::new(
             self.db,
             &self.resolver,
@@ -150,10 +156,7 @@ impl<'db> InferenceContext<'_, 'db> {
             &self.generics,
             LifetimeElisionKind::Infer,
             self.allow_using_generic_params,
-            Some(TyLoweringInferVarsCtx {
-                table: &mut self.table,
-                type_of_placeholder: &mut self.result.type_of_type_placeholder,
-            }),
+            Some(&mut vars_ctx),
             &self.defined_anon_consts,
         );
         let mut path_ctx = if no_diagnostics {

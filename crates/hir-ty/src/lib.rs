@@ -110,7 +110,8 @@ pub use infer::{
 };
 pub use lower::{
     GenericDefaults, GenericDefaultsRef, GenericPredicates, ImplTraits, LifetimeElisionKind,
-    TyDefId, TyLoweringContext, TyLoweringResult, ValueTyDefId, diagnostics::*,
+    TyDefId, TyLoweringContext, TyLoweringInferVarsCtx, TyLoweringResult, ValueTyDefId,
+    diagnostics::*,
 };
 pub use next_solver::interner::{attach_db, attach_db_allow_change, with_attached_db};
 pub use target_feature::TargetFeatures;
