@@ -103,7 +103,8 @@ mod tests;
 use std::sync::LazyLock;
 
 use hir::{
-    Crate, DisplayTarget, InFile, Semantics, db::ExpandDatabase, diagnostics::AnyDiagnostic,
+    Crate, DisplayTarget, InFile, MacroCallIdExt, Semantics, db::ExpandDatabase,
+    diagnostics::AnyDiagnostic,
 };
 use ide_db::{
     FileId, FileRange, FxHashMap, FxHashSet, RootDatabase, Severity, SnippetCap,
@@ -581,7 +582,7 @@ fn handle_diag_from_macros(
     let mut spans = span_map.spans_for_range(node.text_range());
     if spans.any(|span| {
         span.ctx.outer_expn(sema.db).is_some_and(|expansion| {
-            let macro_call = sema.db.lookup_intern_macro_call(expansion.into());
+            let macro_call = expansion.loc(sema.db);
             // We don't want to show diagnostics for non-local macros at all, but proc macros authors
             // seem to rely on being able to emit non-warning-free code, so we don't want to show warnings
             // for them even when the proc macro comes from the same workspace (in rustc that's not a

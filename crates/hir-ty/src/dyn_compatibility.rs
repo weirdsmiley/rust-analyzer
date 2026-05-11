@@ -525,7 +525,7 @@ fn contains_illegal_impl_trait_in_trait<'db>(
     // Since we haven't implemented RPITIT in proper way like rustc yet,
     // just check whether `ret` contains RPIT for now
     for opaque_ty in visitor.0 {
-        let impl_trait_id = db.lookup_intern_impl_trait_id(opaque_ty);
+        let impl_trait_id = opaque_ty.loc(db);
         if matches!(impl_trait_id, ImplTraitId::ReturnTypeImplTrait(..)) {
             return Some(MethodViolationCode::ReferencesImplTraitInTrait);
         }

@@ -530,7 +530,7 @@ impl<'db> SemanticsImpl<'db> {
                 }
             }
             HirFileId::MacroFile(macro_file) => {
-                let node = self.db.lookup_intern_macro_call(macro_file).to_node(self.db);
+                let node = macro_file.loc(self.db).to_node(self.db);
                 let root = find_root(&node.value);
                 self.cache(root, node.file_id);
                 Some(node)
@@ -582,7 +582,7 @@ impl<'db> SemanticsImpl<'db> {
         macro_call: &ast::MacroCall,
     ) -> Option<ExpandResult<SyntaxNode>> {
         let file_id = self.to_def(macro_call)?;
-        let macro_call = self.db.lookup_intern_macro_call(file_id);
+        let macro_call = file_id.loc(self.db);
 
         let skip = matches!(
             macro_call.def.kind,
@@ -1322,7 +1322,7 @@ impl<'db> SemanticsImpl<'db> {
                             })
                             .map(|(call_id, item)| {
                                 let item_range = item.syntax().text_range();
-                                let loc = db.lookup_intern_macro_call(call_id);
+                                let loc = call_id.loc(db);
                                 let text_range = match loc.kind {
                                     hir_expand::MacroCallKind::Attr {
                                         censored_attr_ids: attr_ids,
@@ -2590,7 +2590,7 @@ fn macro_call_to_macro_id(
     macro_call_id: MacroCallId,
 ) -> Option<MacroId> {
     let db: &dyn ExpandDatabase = ctx.db;
-    let loc = db.lookup_intern_macro_call(macro_call_id);
+    let loc = macro_call_id.loc(db);
 
     match loc.def.ast_id() {
         Either::Left(it) => {

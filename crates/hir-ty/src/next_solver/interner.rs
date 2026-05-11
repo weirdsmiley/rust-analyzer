@@ -2043,7 +2043,7 @@ impl<'db> Interner for DbInterner<'db> {
         self,
         opaque: Self::LocalOpaqueTyId,
     ) -> EarlyBinder<Self, Self::Ty> {
-        let impl_trait_id = self.db().lookup_intern_impl_trait_id(opaque.0);
+        let impl_trait_id = opaque.0.loc(self.db);
         match impl_trait_id {
             crate::ImplTraitId::ReturnTypeImplTrait(func, idx) => {
                 crate::opaques::rpit_hidden_types(self.db, func)[idx].get()

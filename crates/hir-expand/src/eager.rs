@@ -60,7 +60,7 @@ pub fn expand_eager_macro_input(
         kind: MacroCallKind::FnLike { ast_id, expand_to: ExpandTo::Expr, eager: None },
         ctxt: call_site,
     };
-    let arg_id = db.intern_macro_call(loc);
+    let arg_id = MacroCallId::new(db, loc);
     #[allow(deprecated)] // builtin eager macros are never derives
     let (_, _, span) = db.macro_arg(arg_id);
     let ExpandResult { value: (arg_exp, arg_exp_map), err: parse_err } =
@@ -115,7 +115,7 @@ pub fn expand_eager_macro_input(
         ctxt: call_site,
     };
 
-    ExpandResult { value: Some(db.intern_macro_call(loc)), err }
+    ExpandResult { value: Some(MacroCallId::new(db, loc)), err }
 }
 
 fn lazy_expand<'db>(

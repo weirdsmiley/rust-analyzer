@@ -36,7 +36,7 @@ impl DeclarativeMacroExpander {
         call_id: MacroCallId,
         span: Span,
     ) -> ExpandResult<(tt::TopSubtree, Option<u32>)> {
-        let loc = db.lookup_intern_macro_call(call_id);
+        let loc = call_id.loc(db);
         match self.mac.err() {
             Some(_) => ExpandResult::new(
                 (tt::TopSubtree::empty(tt::DelimSpan { open: span, close: span }), None),
@@ -120,8 +120,7 @@ impl DeclarativeMacroExpander {
                 def_crate.data(db).edition
             } else {
                 // UNWRAP-SAFETY: Only the root context has no outer expansion
-                let krate =
-                    db.lookup_intern_macro_call(ctx.outer_expn(db).unwrap().into()).def.krate;
+                let krate = crate::MacroCallId::from(ctx.outer_expn(db).unwrap()).loc(db).def.krate;
                 krate.data(db).edition
             }
         };

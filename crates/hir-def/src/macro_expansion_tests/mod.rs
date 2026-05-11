@@ -64,7 +64,7 @@ fn check_errors(#[rust_analyzer::rust_fixture] ra_fixture: &str, expect: Expect)
         .filter_map(|macro_call| {
             let errors = db.parse_macro_expansion_error(macro_call)?;
             let errors = errors.err.as_ref()?.render_to_string(&db);
-            let macro_loc = db.lookup_intern_macro_call(macro_call);
+            let macro_loc = macro_call.loc(&db);
             let ast_id = match macro_loc.kind {
                 MacroCallKind::FnLike { ast_id, .. } => ast_id.map(|it| it.erase()),
                 MacroCallKind::Derive { ast_id, .. } => ast_id.map(|it| it.erase()),
